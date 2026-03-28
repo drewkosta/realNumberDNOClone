@@ -18,7 +18,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const resp = await authApi.login(email, password);
-      login(resp.token, resp.user);
+      login(resp.token, resp.refreshToken, resp.user);
       void navigate('/');
     } catch {
       setError('Invalid email or password');

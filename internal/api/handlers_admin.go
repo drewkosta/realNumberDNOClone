@@ -26,6 +26,30 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, user)
 }
 
+// ── Password Reset (admin resets another user's password) ────────────────────
+
+func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID      int64  `json:"userId"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.UserID == 0 || req.NewPassword == "" {
+		writeError(w, http.StatusBadRequest, "userId and newPassword are required")
+		return
+	}
+
+	if err := h.auth.ResetPassword(r.Context(), req.UserID, req.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "password reset successfully"})
+}
+
 // ── API Key Management ──────────────────────────────────────────────────────
 
 func (h *Handlers) GenerateAPIKey(w http.ResponseWriter, r *http.Request) {

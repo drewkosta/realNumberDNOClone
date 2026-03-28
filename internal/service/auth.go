@@ -54,7 +54,12 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 		return nil, err
 	}
 
-	return &models.LoginResponse{Token: token, User: user}, nil
+	refreshToken, err := s.generateRefreshToken(user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.LoginResponse{Token: token, RefreshToken: refreshToken, User: user}, nil
 }
 
 func (s *AuthService) generateToken(user models.User) (string, error) {
@@ -62,7 +67,8 @@ func (s *AuthService) generateToken(user models.User) (string, error) {
 		"sub":   user.ID,
 		"email": user.Email,
 		"role":  user.Role,
-		"exp":   time.Now().Add(24 * time.Hour).Unix(),
+		"type":  "access",
+		"exp":   time.Now().Add(15 * time.Minute).Unix(),
 		"iat":   time.Now().Unix(),
 	}
 	if user.OrgID != nil {
@@ -71,6 +77,74 @@ func (s *AuthService) generateToken(user models.User) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
+}
+
+func (s *AuthService) generateRefreshToken(user models.User) (string, error) {
+	claims := jwt.MapClaims{
+		"sub":  user.ID,
+		"type": "refresh",
+		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.jwtSecret)
+}
+
+func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken string) (*models.LoginResponse, error) {
+	claims, err := s.ValidateToken(refreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token")
+	}
+	tokenType, _ := claims["type"].(string)
+	if tokenType != "refresh" {
+		return nil, fmt.Errorf("not a refresh token")
+	}
+
+	userID, ok := claims["sub"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	user, err := s.GetUser(ctx, int64(userID))
+	if err != nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !user.Active {
+		return nil, fmt.Errorf("account disabled")
+	}
+
+	accessToken, err := s.generateToken(*user)
+	if err != nil {
+		return nil, err
+	}
+	newRefresh, err := s.generateRefreshToken(*user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.LoginResponse{Token: accessToken, RefreshToken: newRefresh, User: *user}, nil
+}
+
+func (s *AuthService) ResetPassword(ctx context.Context, userID int64, newPassword string) error {
+	if len(newPassword) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+	result, err := s.db.Writer.ExecContext(ctx, s.db.Q(
+		`UPDATE users SET password_hash = $1, updated_at = `+s.db.QNow()+` WHERE id = $2`),
+		string(hash), userID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
 }
 
 func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {

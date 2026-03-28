@@ -42,6 +42,24 @@ func (h *Handlers) GetMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
+		writeError(w, http.StatusBadRequest, "refreshToken is required")
+		return
+	}
+
+	resp, err := h.auth.RefreshAccessToken(r.Context(), req.RefreshToken)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // ── DNO Number Management ───────────────────────────────────────────────────
 
 func (h *Handlers) AddNumber(w http.ResponseWriter, r *http.Request) {

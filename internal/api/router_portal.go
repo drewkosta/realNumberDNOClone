@@ -47,10 +47,11 @@ func NewPortalRouter(
 	r.Get("/health", healthHandler(database, cfg, "portal-service"))
 	r.Get("/ready", readyHandler(database, "portal-service"))
 
-	// Login (rate limited)
+	// Login + refresh (rate limited)
 	r.Group(func(r chi.Router) {
 		r.Use(httprate.LimitByIP(5, time.Minute))
 		r.Post("/api/auth/login", h.Login)
+		r.Post("/api/auth/refresh", h.RefreshToken)
 	})
 
 	// JWT-protected routes
@@ -86,6 +87,7 @@ func NewPortalRouter(
 		r.Group(func(r chi.Router) {
 			r.Use(AdminOnly)
 			r.Post("/api/admin/users", h.CreateUser)
+			r.Post("/api/admin/reset-password", h.ResetPassword)
 			r.Post("/api/admin/api-keys", h.GenerateAPIKey)
 			r.Delete("/api/admin/api-keys", h.RevokeAPIKey)
 			r.Post("/api/admin/itg-ingest", h.IngestITGNumber)
