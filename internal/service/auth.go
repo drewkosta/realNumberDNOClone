@@ -15,20 +15,19 @@ import (
 )
 
 type AuthService struct {
-	reader    *sql.DB
-	writer    *sql.DB
+	db        *db.DB
 	jwtSecret []byte
 }
 
 func NewAuthService(d *db.DB, jwtSecret string) *AuthService {
-	return &AuthService{reader: d.Reader, writer: d.Writer, jwtSecret: []byte(jwtSecret)}
+	return &AuthService{db: d, jwtSecret: []byte(jwtSecret)}
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*models.LoginResponse, error) {
 	var user models.User
 	var orgID sql.NullInt64
-	err := s.reader.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, first_name, last_name, role, org_id, active FROM users WHERE email = ?`,
+	err := s.db.Reader.QueryRowContext(ctx, s.db.Q(
+		`SELECT id, email, password_hash, first_name, last_name, role, org_id, active FROM users WHERE email = $1`),
 		email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &orgID, &user.Active)
 	if err != nil {
@@ -109,8 +108,8 @@ func (s *AuthService) CreateUser(ctx context.Context, req models.CreateUserReque
 		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
-	result, err := s.writer.ExecContext(ctx,
-		`INSERT INTO users (email, password_hash, first_name, last_name, role, org_id) VALUES (?, ?, ?, ?, ?, ?)`,
+	result, err := s.db.Writer.ExecContext(ctx, s.db.Q(
+		`INSERT INTO users (email, password_hash, first_name, last_name, role, org_id) VALUES ($1, $2, $3, $4, $5, $6)`),
 		req.Email, string(hash), req.FirstName, req.LastName, req.Role, req.OrgID,
 	)
 	if err != nil {
@@ -136,8 +135,8 @@ func (s *AuthService) CreateUser(ctx context.Context, req models.CreateUserReque
 func (s *AuthService) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	var user models.User
 	var orgID sql.NullInt64
-	err := s.reader.QueryRowContext(ctx,
-		`SELECT id, email, first_name, last_name, role, org_id, active, created_at FROM users WHERE id = ?`, id,
+	err := s.db.Reader.QueryRowContext(ctx, s.db.Q(
+		`SELECT id, email, first_name, last_name, role, org_id, active, created_at FROM users WHERE id = $1`), id,
 	).Scan(&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &orgID, &user.Active, &user.CreatedAt)
 	if err != nil {
 		return nil, err

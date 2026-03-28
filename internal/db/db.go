@@ -5,8 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
+	"regexp"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
@@ -16,8 +15,8 @@ import (
 )
 
 // DB wraps separate reader and writer database connections.
-// For SQLite: writer is single-connection, reader is a pool (WAL concurrent reads).
-// For PostgreSQL: both point to the same connection pool.
+// PostgreSQL is the default dialect -- all service SQL uses $N placeholders.
+// For SQLite (local dev only), Q() rewrites $N -> ? automatically.
 type DB struct {
 	Writer *sql.DB
 	Reader *sql.DB
@@ -54,7 +53,7 @@ func initSQLite(dbPath string) (*DB, error) {
 	}
 
 	d := &DB{Writer: writer, Reader: reader, driver: config.DBDriverSQLite}
-	if err := runMigrationsSQLite(writer, config.DBDriverSQLite); err != nil {
+	if err := runMigrationsSQLite(writer); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("running sqlite migrations: %w", err)
 	}
@@ -75,7 +74,7 @@ func initPostgres(dsn string) (*DB, error) {
 	}
 
 	d := &DB{Writer: conn, Reader: conn, driver: config.DBDriverPostgres}
-	if err := runMigrationsPostgres(conn, config.DBDriverPostgres); err != nil {
+	if err := runMigrationsPostgres(conn); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("running postgres migrations: %w", err)
 	}
@@ -95,36 +94,41 @@ func (d *DB) Ping(ctx context.Context) error {
 	return d.Writer.PingContext(ctx)
 }
 
-func (d *DB) IsPostgres() bool {
-	return d.driver == config.DBDriverPostgres
+func (d *DB) IsSQLite() bool {
+	return d.driver == config.DBDriverSQLite
 }
 
-// rewritePlaceholders converts ? placeholders to $1, $2, ... for PostgreSQL.
-func rewritePlaceholders(query string) string {
-	idx := 0
-	var b strings.Builder
-	b.Grow(len(query) + 20)
-	for i := 0; i < len(query); i++ {
-		if query[i] == '?' {
-			idx++
-			b.WriteByte('$')
-			b.WriteString(strconv.Itoa(idx))
-		} else {
-			b.WriteByte(query[i])
-		}
-	}
-	return b.String()
-}
+var dollarParamRe = regexp.MustCompile(`\$\d+`)
 
-// Q returns the query with placeholders rewritten for the current driver.
+// Q adapts a query for the current driver. Queries are written in PostgreSQL
+// dialect ($1, $2, ...) by default. For SQLite, $N placeholders are rewritten
+// to ? and strftime is used instead of date_trunc.
 func (d *DB) Q(query string) string {
-	if d.IsPostgres() {
-		return rewritePlaceholders(query)
+	if d.IsSQLite() {
+		return dollarParamRe.ReplaceAllString(query, "?")
 	}
 	return query
 }
 
-func runMigrationsSQLite(db *sql.DB, driver config.DBDriver) error {
+// QTimeTrunc returns a SQL expression that truncates a timestamp column to
+// the hour. PostgreSQL uses date_trunc; SQLite uses strftime.
+func (d *DB) QTimeTrunc(col string) string {
+	if d.IsSQLite() {
+		return fmt.Sprintf("strftime('%%Y-%%m-%%d %%H:00', %s)", col)
+	}
+	return fmt.Sprintf("date_trunc('hour', %s)::text", col)
+}
+
+// QUpsertTimestamp returns the expression for "current timestamp" in an
+// ON CONFLICT update clause.
+func (d *DB) QNow() string {
+	if d.IsSQLite() {
+		return "CURRENT_TIMESTAMP"
+	}
+	return "NOW()"
+}
+
+func runMigrationsSQLite(db *sql.DB) error {
 	migrations := []string{
 		`CREATE TABLE IF NOT EXISTS organizations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,10 +209,10 @@ func runMigrationsSQLite(db *sql.DB, driver config.DBDriver) error {
 		`DROP INDEX IF EXISTS idx_dno_phone`,
 		`DROP INDEX IF EXISTS idx_dno_status`,
 	}
-	return execMigrations(db, driver, migrations)
+	return execMigrations(db, migrations)
 }
 
-func runMigrationsPostgres(db *sql.DB, driver config.DBDriver) error {
+func runMigrationsPostgres(db *sql.DB) error {
 	migrations := []string{
 		`CREATE TABLE IF NOT EXISTS organizations (
 			id SERIAL PRIMARY KEY,
@@ -287,40 +291,34 @@ func runMigrationsPostgres(db *sql.DB, driver config.DBDriver) error {
 			completed_at TIMESTAMPTZ
 		)`,
 	}
-	return execMigrations(db, driver, migrations)
+	return execMigrations(db, migrations)
 }
 
-func execMigrations(db *sql.DB, driver config.DBDriver, migrations []string) error {
+func execMigrations(db *sql.DB, migrations []string) error {
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
 			return fmt.Errorf("executing migration: %w", err)
 		}
 	}
-	return seedAdminUser(db, driver)
+	return seedAdminUser(db)
 }
 
-func seedAdminUser(db *sql.DB, driver config.DBDriver) error {
-	q := func(query string) string {
-		if driver == config.DBDriverPostgres {
-			return rewritePlaceholders(query)
-		}
-		return query
-	}
+func seedAdminUser(sqldb *sql.DB) error {
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin'").Scan(&count); err != nil {
+	if err := sqldb.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin'").Scan(&count); err != nil {
 		return fmt.Errorf("checking admin count: %w", err)
 	}
 	if count > 0 {
 		return nil
 	}
 
-	_, err := db.Exec(`INSERT INTO organizations (name, org_type) SELECT 'System Admin', 'admin' WHERE NOT EXISTS (SELECT 1 FROM organizations WHERE name = 'System Admin')`)
+	_, err := sqldb.Exec(`INSERT INTO organizations (name, org_type) SELECT 'System Admin', 'admin' WHERE NOT EXISTS (SELECT 1 FROM organizations WHERE name = 'System Admin')`)
 	if err != nil {
 		return err
 	}
 
 	var orgID int64
-	if err := db.QueryRow("SELECT id FROM organizations WHERE name = 'System Admin'").Scan(&orgID); err != nil {
+	if err := sqldb.QueryRow("SELECT id FROM organizations WHERE name = 'System Admin'").Scan(&orgID); err != nil {
 		return err
 	}
 
@@ -334,10 +332,11 @@ func seedAdminUser(db *sql.DB, driver config.DBDriver) error {
 		return fmt.Errorf("hashing default password: %w", err)
 	}
 
-	_, err = db.Exec(q(
+	// Seed uses portable SQL without parameterized placeholders for simplicity
+	// (only runs once on first boot, not in hot path)
+	_, err = sqldb.Exec(
 		`INSERT INTO users (email, password_hash, first_name, last_name, role, org_id)
-		 SELECT 'admin@realnumber.local', ?, 'System', 'Admin', 'admin', ?
-		 WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@realnumber.local')`),
-		string(hash), orgID)
+		 SELECT 'admin@realnumber.local', '`+string(hash)+`', 'System', 'Admin', 'admin', `+fmt.Sprintf("%d", orgID)+`
+		 WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@realnumber.local')`)
 	return err
 }
