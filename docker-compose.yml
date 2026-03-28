@@ -9,6 +9,56 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U realnumber"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build: { context: ., dockerfile: Dockerfile, target: gateway }
+    ports:
+      - "8080:8080"
+    environment:
+      GATEWAY_PORT: "8080"
+      QUERY_SERVICE_URL: http://query-service:8081
+      PORTAL_SERVICE_URL: http://portal-service:8082
+    depends_on:
+      - query-service
+      - portal-service
+
+  query-service:
+    build: { context: ., dockerfile: Dockerfile, target: query-service }
+    ports:
+      - "8081:8081"
+    environment:
+      QUERY_PORT: "8081"
+      DB_DRIVER: postgres
+      DATABASE_URL: postgres://realnumber:realnumber@postgres:5432/realnumber?sslmode=disable
+      JWT_SECRET: docker-dev-secret
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  portal-service:
+    build: { context: ., dockerfile: Dockerfile, target: portal-service }
+    ports:
+      - "8082:8082"
+    environment:
+      PORTAL_PORT: "8082"
+      DB_DRIVER: postgres
+      DATABASE_URL: postgres://realnumber:realnumber@postgres:5432/realnumber?sslmode=disable
+      JWT_SECRET: docker-dev-secret
+      CORS_ORIGIN: "*"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  worker-service:
+    build: { context: ., dockerfile: Dockerfile, target: worker-service }
+    environment:
+      DB_DRIVER: postgres
+      DATABASE_URL: postgres://realnumber:realnumber@postgres:5432/realnumber?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
 
 volumes:
   pgdata:
