@@ -9,26 +9,29 @@ import (
 	"time"
 
 	"realNumberDNOClone/internal/cache"
+	"realNumberDNOClone/internal/db"
 	"realNumberDNOClone/internal/metrics"
 	"realNumberDNOClone/internal/models"
 	"realNumberDNOClone/internal/querylog"
 )
 
 type DNOService struct {
-	db             *sql.DB
+	reader         *sql.DB
+	writer         *sql.DB
 	qlWriter       *querylog.AsyncWriter
 	dnoCache       *cache.TTLCache[*models.DNOQueryResponse]
 	analyticsCache *cache.TTLCache[*models.AnalyticsSummary]
 }
 
 func NewDNOService(
-	db *sql.DB,
+	d *db.DB,
 	qlWriter *querylog.AsyncWriter,
 	dnoCache *cache.TTLCache[*models.DNOQueryResponse],
 	analyticsCache *cache.TTLCache[*models.AnalyticsSummary],
 ) *DNOService {
 	return &DNOService{
-		db:             db,
+		reader:         d.Reader,
+		writer:         d.Writer,
 		qlWriter:       qlWriter,
 		dnoCache:       dnoCache,
 		analyticsCache: analyticsCache,
@@ -87,7 +90,7 @@ func (s *DNOService) QueryNumber(ctx context.Context, phoneNumber, channel strin
 	}
 
 	var dno models.DNONumber
-	err := s.db.QueryRowContext(ctx,
+	err := s.reader.QueryRowContext(ctx,
 		`SELECT id, phone_number, dataset, channel, status, updated_at FROM dno_numbers
 		 WHERE phone_number = ? AND (channel = ? OR channel = 'both') AND status = 'active'
 		 LIMIT 1`,
@@ -211,7 +214,7 @@ func (s *DNOService) BulkQuery(ctx context.Context, phoneNumbers []string, chann
 			 WHERE phone_number IN (%s) AND (channel = ? OR channel = 'both') AND status = 'active'`,
 			strings.Join(placeholders, ","),
 		)
-		rows, err := s.db.QueryContext(ctx, query, args...)
+		rows, err := s.reader.QueryContext(ctx, query, args...)
 		if err != nil {
 			return nil, fmt.Errorf("bulk query: %w", err)
 		}
@@ -291,7 +294,7 @@ func (s *DNOService) AddNumber(ctx context.Context, req models.AddDNORequest, or
 		return nil, err
 	}
 
-	_, err := s.db.ExecContext(ctx,
+	_, err := s.writer.ExecContext(ctx,
 		`INSERT INTO dno_numbers (phone_number, dataset, number_type, channel, status, reason, added_by_org_id, added_by_user_id)
 		 VALUES (?, 'subscriber', ?, ?, 'active', ?, ?, ?)
 		 ON CONFLICT(phone_number, channel) DO UPDATE SET status='active', reason=?, updated_at=CURRENT_TIMESTAMP`,
@@ -303,14 +306,14 @@ func (s *DNOService) AddNumber(ctx context.Context, req models.AddDNORequest, or
 
 	// Query back the actual ID
 	var id int64
-	err = s.db.QueryRowContext(ctx,
+	err = s.reader.QueryRowContext(ctx,
 		`SELECT id FROM dno_numbers WHERE phone_number = ? AND channel = ?`, phone, req.Channel,
 	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving DNO number id: %w", err)
 	}
 
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_log (user_id, org_id, action, entity_type, entity_id, details)
+	_, _ = s.writer.ExecContext(ctx, `INSERT INTO audit_log (user_id, org_id, action, entity_type, entity_id, details)
 		VALUES (?, ?, 'add', 'dno_number', ?, ?)`, userID, orgID, id, fmt.Sprintf("Added %s to subscriber DNO list", phone))
 
 	// Invalidate cache for this number
@@ -343,7 +346,7 @@ func (s *DNOService) RemoveNumber(ctx context.Context, phoneNumber, channel stri
 		return err
 	}
 
-	result, err := s.db.ExecContext(ctx,
+	result, err := s.writer.ExecContext(ctx,
 		`UPDATE dno_numbers SET status='inactive', updated_at=CURRENT_TIMESTAMP
 		 WHERE phone_number = ? AND (channel = ? OR channel = 'both') AND dataset = 'subscriber' AND added_by_org_id = ?`,
 		phone, channel, orgID,
@@ -360,7 +363,7 @@ func (s *DNOService) RemoveNumber(ctx context.Context, phoneNumber, channel stri
 		return fmt.Errorf("number not found or not authorized to remove")
 	}
 
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_log (user_id, org_id, action, entity_type, details)
+	_, _ = s.writer.ExecContext(ctx, `INSERT INTO audit_log (user_id, org_id, action, entity_type, details)
 		VALUES (?, ?, 'remove', 'dno_number', ?)`, userID, orgID, fmt.Sprintf("Removed %s from subscriber DNO list", phone))
 
 	// Invalidate caches
@@ -426,13 +429,13 @@ func (s *DNOService) ListNumbers(ctx context.Context, orgID *int64, dataset, sta
 	var total int
 	countArgs := make([]interface{}, len(args))
 	copy(countArgs, args)
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dno_numbers "+where, countArgs...).Scan(&total); err != nil {
+	if err := s.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM dno_numbers "+where, countArgs...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("counting numbers: %w", err)
 	}
 
 	offset := (page - 1) * pageSize
 	args = append(args, pageSize, offset)
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.reader.QueryContext(ctx,
 		"SELECT id, phone_number, dataset, number_type, channel, status, reason, created_at, updated_at FROM dno_numbers "+
 			where+" ORDER BY updated_at DESC LIMIT ? OFFSET ?", args...)
 	if err != nil {
@@ -471,7 +474,7 @@ func (s *DNOService) ListNumbers(ctx context.Context, orgID *int64, dataset, sta
 }
 
 func (s *DNOService) StreamNumbers(ctx context.Context, fn func(models.DNONumber) error) error {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.reader.QueryContext(ctx,
 		`SELECT id, phone_number, dataset, number_type, channel, status, reason, created_at, updated_at
 		 FROM dno_numbers WHERE status = 'active' ORDER BY phone_number`)
 	if err != nil {
@@ -530,12 +533,12 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		auditExtraArgs = append(auditExtraArgs, *orgID)
 	}
 
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dno_numbers "+dnoWhere, dnoArgs...).Scan(&summary.TotalDNONumbers); err != nil {
+	if err := s.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM dno_numbers "+dnoWhere, dnoArgs...).Scan(&summary.TotalDNONumbers); err != nil {
 		return nil, fmt.Errorf("counting active numbers: %w", err)
 	}
 	summary.ActiveNumbers = summary.TotalDNONumbers
 
-	rows, err := s.db.QueryContext(ctx, "SELECT dataset, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY dataset", dnoArgs...)
+	rows, err := s.reader.QueryContext(ctx, "SELECT dataset, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY dataset", dnoArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying by dataset: %w", err)
 	}
@@ -553,7 +556,7 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		return nil, fmt.Errorf("iterating dataset rows: %w", err)
 	}
 
-	rows, err = s.db.QueryContext(ctx, "SELECT channel, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY channel", dnoArgs...)
+	rows, err = s.reader.QueryContext(ctx, "SELECT channel, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY channel", dnoArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying by channel: %w", err)
 	}
@@ -571,7 +574,7 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		return nil, fmt.Errorf("iterating channel rows: %w", err)
 	}
 
-	rows, err = s.db.QueryContext(ctx, "SELECT number_type, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY number_type", dnoArgs...)
+	rows, err = s.reader.QueryContext(ctx, "SELECT number_type, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY number_type", dnoArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying by number type: %w", err)
 	}
@@ -591,13 +594,13 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 
 	since := time.Now().Add(-24 * time.Hour).Format("2006-01-02 15:04:05")
 	queryArgs := append([]interface{}{since}, queryExtraArgs...)
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM query_log "+queryWhere, queryArgs...).Scan(&summary.TotalQueries24h); err != nil {
+	if err := s.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM query_log "+queryWhere, queryArgs...).Scan(&summary.TotalQueries24h); err != nil {
 		return nil, fmt.Errorf("counting queries 24h: %w", err)
 	}
 
 	var hits int
 	hitArgs := append([]interface{}{since}, queryExtraArgs...)
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM query_log "+queryWhere+" AND result = 'hit'", hitArgs...).Scan(&hits); err != nil {
+	if err := s.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM query_log "+queryWhere+" AND result = 'hit'", hitArgs...).Scan(&hits); err != nil {
 		return nil, fmt.Errorf("counting hits 24h: %w", err)
 	}
 	if summary.TotalQueries24h > 0 {
@@ -605,7 +608,7 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 	}
 
 	hourArgs := append([]interface{}{since}, queryExtraArgs...)
-	rows, err = s.db.QueryContext(ctx,
+	rows, err = s.reader.QueryContext(ctx,
 		`SELECT strftime('%Y-%m-%d %H:00', queried_at) as hour, COUNT(*)
 		 FROM query_log `+queryWhere+` GROUP BY hour ORDER BY hour`, hourArgs...)
 	if err != nil {
@@ -626,11 +629,11 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 
 	week := time.Now().Add(-7 * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	addArgs := append([]interface{}{week}, auditExtraArgs...)
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'add'", addArgs...).Scan(&summary.RecentAdditions); err != nil {
+	if err := s.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'add'", addArgs...).Scan(&summary.RecentAdditions); err != nil {
 		return nil, fmt.Errorf("counting recent additions: %w", err)
 	}
 	removeArgs := append([]interface{}{week}, auditExtraArgs...)
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'remove'", removeArgs...).Scan(&summary.RecentRemovals); err != nil {
+	if err := s.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'remove'", removeArgs...).Scan(&summary.RecentRemovals); err != nil {
 		return nil, fmt.Errorf("counting recent removals: %w", err)
 	}
 
@@ -660,13 +663,13 @@ func (s *DNOService) GetAuditLog(ctx context.Context, orgID *int64, page, pageSi
 	var total int
 	countArgs := make([]interface{}, len(args))
 	copy(countArgs, args)
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+where, countArgs...).Scan(&total); err != nil {
+	if err := s.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+where, countArgs...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("counting audit entries: %w", err)
 	}
 
 	offset := (page - 1) * pageSize
 	args = append(args, pageSize, offset)
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.reader.QueryContext(ctx,
 		"SELECT id, user_id, org_id, action, entity_type, entity_id, details, created_at FROM audit_log "+
 			where+" ORDER BY created_at DESC LIMIT ? OFFSET ?", args...)
 	if err != nil {

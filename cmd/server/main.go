@@ -31,7 +31,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Structured logger
 	logLevel := slog.LevelInfo
 	switch cfg.LogLevel {
 	case "debug":
@@ -44,8 +43,8 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	slog.SetDefault(logger)
 
-	logger.Info("Initializing database", "env", cfg.Env, "path", cfg.DBPath)
-	database, err := db.Initialize(cfg.DBPath)
+	logger.Info("Initializing database", "env", cfg.Env, "driver", cfg.DBDriver, "path", cfg.DBPath)
+	database, err := db.Initialize(cfg)
 	if err != nil {
 		logger.Error("Failed to initialize database", "error", err)
 		os.Exit(1)
@@ -63,15 +62,13 @@ func main() {
 		}
 	}
 
-	// Async query log writer
 	qlWriter := querylog.NewAsyncWriter(
-		database,
+		database.Writer,
 		cfg.QueryLogFlushSize,
 		time.Duration(cfg.QueryLogFlushInterval)*time.Second,
 		logger,
 	)
 
-	// DNO lookup cache
 	var dnoCache *cache.TTLCache[*models.DNOQueryResponse]
 	if cfg.DNOCacheTTLSeconds > 0 {
 		dnoCache = cache.New[*models.DNOQueryResponse](
@@ -80,7 +77,6 @@ func main() {
 		)
 	}
 
-	// Analytics cache
 	var analyticsCache *cache.TTLCache[*models.AnalyticsSummary]
 	if cfg.AnalyticsCacheTTLSeconds > 0 {
 		analyticsCache = cache.New[*models.AnalyticsSummary](
@@ -89,9 +85,8 @@ func main() {
 		)
 	}
 
-	// Background job worker for bulk uploads
 	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
-	jobWorker := jobs.NewWorker(database, dnoService.AddNumber, logger)
+	jobWorker := jobs.NewWorker(database.Writer, dnoService.AddNumber, logger)
 	jobWorker.Start()
 
 	router := api.NewRouter(database, cfg, qlWriter, dnoCache, analyticsCache, logger)

@@ -10,7 +10,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func SeedLocalData(db *sql.DB) error {
+func SeedLocalData(d *DB) error {
+	db := d.Writer
 	var count int
 	if err := db.QueryRow("SELECT COUNT(*) FROM dno_numbers").Scan(&count); err != nil {
 		return fmt.Errorf("checking existing data: %w", err)

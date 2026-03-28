@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 
 	"realNumberDNOClone/internal/cache"
 	"realNumberDNOClone/internal/config"
+	"realNumberDNOClone/internal/db"
 	"realNumberDNOClone/internal/metrics"
 	"realNumberDNOClone/internal/models"
 	"realNumberDNOClone/internal/querylog"
@@ -22,7 +22,7 @@ import (
 )
 
 func NewRouter(
-	db *sql.DB,
+	database *db.DB,
 	cfg *config.Config,
 	qlWriter *querylog.AsyncWriter,
 	dnoCache *cache.TTLCache[*models.DNOQueryResponse],
@@ -54,9 +54,9 @@ func NewRouter(
 		MaxAge:           300,
 	}))
 
-	authService := service.NewAuthService(db, cfg.JWTSecret)
-	dnoService := service.NewDNOService(db, qlWriter, dnoCache, analyticsCache)
-	h := NewHandlers(db, dnoService, authService)
+	authService := service.NewAuthService(database, cfg.JWTSecret)
+	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
+	h := NewHandlers(database.Writer, dnoService, authService)
 
 	// Prometheus metrics
 	r.Handle("/metrics", promhttp.Handler())
@@ -65,7 +65,7 @@ func NewRouter(
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		status := "ok"
 		dbStatus := "ok"
-		if err := db.PingContext(r.Context()); err != nil {
+		if err := database.Ping(r.Context()); err != nil {
 			status = "degraded"
 			dbStatus = err.Error()
 		}

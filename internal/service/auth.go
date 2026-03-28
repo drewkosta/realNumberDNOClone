@@ -10,22 +10,24 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 
+	"realNumberDNOClone/internal/db"
 	"realNumberDNOClone/internal/models"
 )
 
 type AuthService struct {
-	db        *sql.DB
+	reader    *sql.DB
+	writer    *sql.DB
 	jwtSecret []byte
 }
 
-func NewAuthService(db *sql.DB, jwtSecret string) *AuthService {
-	return &AuthService{db: db, jwtSecret: []byte(jwtSecret)}
+func NewAuthService(d *db.DB, jwtSecret string) *AuthService {
+	return &AuthService{reader: d.Reader, writer: d.Writer, jwtSecret: []byte(jwtSecret)}
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*models.LoginResponse, error) {
 	var user models.User
 	var orgID sql.NullInt64
-	err := s.db.QueryRowContext(ctx,
+	err := s.reader.QueryRowContext(ctx,
 		`SELECT id, email, password_hash, first_name, last_name, role, org_id, active FROM users WHERE email = ?`,
 		email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &orgID, &user.Active)
@@ -107,7 +109,7 @@ func (s *AuthService) CreateUser(ctx context.Context, req models.CreateUserReque
 		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
-	result, err := s.db.ExecContext(ctx,
+	result, err := s.writer.ExecContext(ctx,
 		`INSERT INTO users (email, password_hash, first_name, last_name, role, org_id) VALUES (?, ?, ?, ?, ?, ?)`,
 		req.Email, string(hash), req.FirstName, req.LastName, req.Role, req.OrgID,
 	)
@@ -134,7 +136,7 @@ func (s *AuthService) CreateUser(ctx context.Context, req models.CreateUserReque
 func (s *AuthService) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	var user models.User
 	var orgID sql.NullInt64
-	err := s.db.QueryRowContext(ctx,
+	err := s.reader.QueryRowContext(ctx,
 		`SELECT id, email, first_name, last_name, role, org_id, active, created_at FROM users WHERE id = ?`, id,
 	).Scan(&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &orgID, &user.Active, &user.CreatedAt)
 	if err != nil {
