@@ -44,7 +44,7 @@ export default function AuditPage() {
               </thead>
               <tbody>
                 {data.data.map((entry) => (
-                  <tr key={entry.id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <tr key={entry.id} className="border-b border-gray-50 row-hover">
                     <td className="px-4 py-3 text-gray-500">
                       {new Date(entry.createdAt).toLocaleString()}
                     </td>

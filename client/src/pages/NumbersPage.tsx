@@ -73,7 +73,7 @@ export default function NumbersPage() {
 
       {/* Add number form */}
       {showAdd && (
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6 animate-fade-down">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Number to DNO List</h2>
           <form
             onSubmit={(e) => {
@@ -244,7 +244,7 @@ export default function NumbersPage() {
               <tbody>
                 {data?.data && data.data.length > 0 ? (
                   data.data.map((n) => (
-                    <tr key={n.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <tr key={n.id} className="border-b border-gray-50 row-hover">
                       <td className="px-4 py-3 font-mono font-medium">{n.phoneNumber}</td>
                       <td className="px-4 py-3">
                         <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">

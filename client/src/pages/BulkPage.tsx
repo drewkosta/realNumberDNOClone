@@ -40,7 +40,7 @@ export default function BulkPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Upload */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="card-hover bg-white rounded-xl p-6 shadow-sm border border-gray-100 animate-fade-up">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Bulk Upload</h2>
           <p className="text-sm text-gray-500 mb-4">
             Upload a CSV file with phone numbers to add to the DNO subscriber set. The CSV should
@@ -157,7 +157,7 @@ export default function BulkPage() {
         </div>
 
         {/* Export */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="card-hover bg-white rounded-xl p-6 shadow-sm border border-gray-100 animate-fade-up stagger-2">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Flat File Export</h2>
           <p className="text-sm text-gray-500 mb-6">
             Download the complete DNO database as a CSV flat file. The export includes all active

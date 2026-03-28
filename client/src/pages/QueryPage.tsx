@@ -161,7 +161,7 @@ export default function QueryPage() {
       {/* Single result */}
       {singleResult && (
         <div
-          className={`rounded-xl p-6 shadow-sm border ${
+          className={`result-enter rounded-xl p-6 shadow-sm border ${
             singleResult.isDno
               ? 'bg-red-50 border-red-200'
               : 'bg-green-50 border-green-200'
@@ -205,18 +205,18 @@ export default function QueryPage() {
 
       {/* Bulk results */}
       {bulkResult && (
-        <div>
+        <div className="animate-fade-up">
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 text-center">
-              <p className="text-2xl font-bold text-gray-900">{bulkResult.total}</p>
+            <div className="card-hover bg-white rounded-xl p-4 shadow-sm border border-gray-100 text-center animate-fade-up stagger-1">
+              <p className="text-2xl font-bold text-gray-900 animate-count-up">{bulkResult.total}</p>
               <p className="text-sm text-gray-500">Total Queried</p>
             </div>
-            <div className="bg-red-50 rounded-xl p-4 shadow-sm border border-red-100 text-center">
-              <p className="text-2xl font-bold text-red-700">{bulkResult.hits}</p>
+            <div className="card-hover bg-red-50 rounded-xl p-4 shadow-sm border border-red-100 text-center animate-fade-up stagger-2">
+              <p className="text-2xl font-bold text-red-700 animate-count-up">{bulkResult.hits}</p>
               <p className="text-sm text-red-600">DNO Hits</p>
             </div>
-            <div className="bg-green-50 rounded-xl p-4 shadow-sm border border-green-100 text-center">
-              <p className="text-2xl font-bold text-green-700">{bulkResult.misses}</p>
+            <div className="card-hover bg-green-50 rounded-xl p-4 shadow-sm border border-green-100 text-center animate-fade-up stagger-3">
+              <p className="text-2xl font-bold text-green-700 animate-count-up">{bulkResult.misses}</p>
               <p className="text-sm text-green-600">Clear</p>
             </div>
           </div>
@@ -233,7 +233,7 @@ export default function QueryPage() {
               </thead>
               <tbody>
                 {bulkResult.results.map((r) => (
-                  <tr key={r.phoneNumber} className="border-b border-gray-50 hover:bg-gray-50">
+                  <tr key={r.phoneNumber} className="border-b border-gray-50 row-hover">
                     <td className="px-4 py-3 font-mono">{r.phoneNumber}</td>
                     <td className="px-4 py-3">
                       <span
