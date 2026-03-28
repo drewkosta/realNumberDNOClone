@@ -15,11 +15,17 @@ import (
 	"realNumberDNOClone/internal/querylog"
 )
 
+// WebhookFirer is an interface to avoid circular dependency with FeaturesService
+type WebhookFirer interface {
+	FireWebhooks(event models.WebhookEvent)
+}
+
 type DNOService struct {
 	db             *appdb.DB
 	qlWriter       *querylog.AsyncWriter
 	dnoCache       *cache.TTLCache[*models.DNOQueryResponse]
 	analyticsCache *cache.TTLCache[*models.AnalyticsSummary]
+	webhooks       WebhookFirer
 }
 
 func NewDNOService(
@@ -34,6 +40,10 @@ func NewDNOService(
 		dnoCache:       dnoCache,
 		analyticsCache: analyticsCache,
 	}
+}
+
+func (s *DNOService) SetWebhookFirer(wf WebhookFirer) {
+	s.webhooks = wf
 }
 
 var phoneRegex = regexp.MustCompile(`^\d{10}$`)
@@ -286,6 +296,14 @@ func (s *DNOService) AddNumber(ctx context.Context, req models.AddDNORequest, or
 		s.analyticsCache.DeletePrefix("org:")
 	}
 
+	// Fire webhooks
+	if s.webhooks != nil {
+		s.webhooks.FireWebhooks(models.WebhookEvent{
+			Event: "dno.added", PhoneNumber: phone, Dataset: "subscriber",
+			Channel: req.Channel, Timestamp: time.Now(), OrgID: &orgID,
+		})
+	}
+
 	return &models.DNONumber{
 		ID: id, PhoneNumber: phone, Dataset: "subscriber",
 		NumberType: req.NumberType, Channel: req.Channel, Status: "active", Reason: &req.Reason,
@@ -329,6 +347,14 @@ func (s *DNOService) RemoveNumber(ctx context.Context, phoneNumber, channel stri
 		s.analyticsCache.Delete("all")
 		s.analyticsCache.DeletePrefix("org:")
 	}
+
+	if s.webhooks != nil {
+		s.webhooks.FireWebhooks(models.WebhookEvent{
+			Event: "dno.removed", PhoneNumber: phone, Dataset: "subscriber",
+			Channel: channel, Timestamp: time.Now(), OrgID: &orgID,
+		})
+	}
+
 	return nil
 }
 

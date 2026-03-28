@@ -40,6 +40,9 @@ func SeedLocalData(d *DB) error {
 	if err := seedAuditLogs(db); err != nil {
 		return fmt.Errorf("seeding audit logs: %w", err)
 	}
+	if err := seedNumberRegistry(db); err != nil {
+		return fmt.Errorf("seeding number registry: %w", err)
+	}
 
 	log.Println("[seed] Seeding complete")
 	return nil
@@ -385,6 +388,68 @@ func seedAuditLogs(db *sql.DB) error {
 		return fmt.Errorf("committing audit logs: %w", err)
 	}
 	log.Printf("[seed]   %d audit log entries created", count)
+	return nil
+}
+
+func seedNumberRegistry(db *sql.DB) error {
+	rng := rand.New(rand.NewSource(55))
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(
+		`INSERT OR IGNORE INTO number_registry (phone_number, owner_org_id, number_type, status, text_enabled) VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	count := 0
+	areaCodes := []string{"201", "212", "305", "312", "415", "617", "713"}
+	tfPrefixes := []string{"800", "833", "844", "855", "866", "877", "888"}
+	orgIDs := []int64{2, 3, 5, 6}
+
+	// Assigned local numbers owned by orgs
+	for i := 0; i < 300; i++ {
+		ac := areaCodes[rng.Intn(len(areaCodes))]
+		phone := fmt.Sprintf("%s%07d", ac, rng.Intn(10000000))
+		orgID := orgIDs[rng.Intn(len(orgIDs))]
+		stmt.Exec(phone, orgID, "local", "assigned", 0)
+		count++
+	}
+
+	// Toll-free numbers (some text-enabled, some not)
+	for i := 0; i < 200; i++ {
+		pf := tfPrefixes[rng.Intn(len(tfPrefixes))]
+		phone := fmt.Sprintf("%s%07d", pf, rng.Intn(10000000))
+		orgID := orgIDs[rng.Intn(len(orgIDs))]
+		textEnabled := 0
+		if rng.Float32() < 0.6 {
+			textEnabled = 1
+		}
+		stmt.Exec(phone, orgID, "toll_free", "assigned", textEnabled)
+		count++
+	}
+
+	// Disconnected/unassigned numbers (for auto-set simulation)
+	for i := 0; i < 50; i++ {
+		ac := areaCodes[rng.Intn(len(areaCodes))]
+		phone := fmt.Sprintf("%s%07d", ac, rng.Intn(10000000))
+		status := "disconnected"
+		if rng.Float32() < 0.5 {
+			status = "unassigned"
+		}
+		stmt.Exec(phone, nil, "local", status, 0)
+		count++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	log.Printf("[seed]   %d number registry entries created (mock TFNRegistry/NPAC)", count)
 	return nil
 }
 

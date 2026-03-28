@@ -57,7 +57,9 @@ func NewRouter(
 	authService := service.NewAuthService(database, cfg.JWTSecret)
 	apiKeyService := service.NewAPIKeyService(database)
 	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
+	featuresService := service.NewFeaturesService(database, logger)
 	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService)
+	fh := NewFeaturesHandlers(featuresService)
 
 	// Prometheus metrics
 	r.Handle("/metrics", promhttp.Handler())
@@ -121,12 +123,34 @@ func NewRouter(
 		r.Get("/api/analytics", h.GetAnalytics)
 		r.Get("/api/audit-log", h.GetAuditLog)
 
+		// Compliance & ROI
+		r.Get("/api/compliance-report", fh.ComplianceReport)
+		r.Get("/api/roi-calculator", fh.CalculateROI)
+
+		// DNO Analyzer
+		r.Post("/api/analyzer", fh.AnalyzeTraffic)
+
+		// Number ownership validation
+		r.Get("/api/dno/validate-ownership", fh.ValidateOwnership)
+
+		// Webhooks (org-scoped)
+		r.Post("/api/webhooks", fh.CreateWebhook)
+		r.Get("/api/webhooks", fh.ListWebhooks)
+		r.Delete("/api/webhooks", fh.DeleteWebhook)
+
 		// Admin routes
 		r.Group(func(r chi.Router) {
 			r.Use(AdminOnly)
 			r.Post("/api/admin/users", h.CreateUser)
 			r.Post("/api/admin/api-keys", h.GenerateAPIKey)
 			r.Delete("/api/admin/api-keys", h.RevokeAPIKey)
+
+			// ITG traceback ingest
+			r.Post("/api/admin/itg-ingest", fh.IngestITGNumber)
+
+			// Mock external integrations
+			r.Post("/api/admin/npac-event", fh.NPACPortingEvent)
+			r.Post("/api/admin/tss-sync", fh.TSSRegistrySync)
 		})
 	})
 

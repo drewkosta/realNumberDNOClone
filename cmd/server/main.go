@@ -86,6 +86,9 @@ func main() {
 	}
 
 	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
+	featuresService := service.NewFeaturesService(database, logger)
+	dnoService.SetWebhookFirer(featuresService)
+
 	jobWorker := jobs.NewWorker(database.Writer, dnoService.AddNumber, logger)
 	jobWorker.Start()
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
@@ -208,6 +209,28 @@ func runMigrationsSQLite(db *sql.DB) error {
 		)`,
 		`DROP INDEX IF EXISTS idx_dno_phone`,
 		`DROP INDEX IF EXISTS idx_dno_status`,
+		// ITG traceback metadata columns
+		`ALTER TABLE dno_numbers ADD COLUMN investigation_id TEXT`,
+		`ALTER TABLE dno_numbers ADD COLUMN threat_category TEXT`,
+		// Webhook subscriptions
+		`CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			org_id INTEGER NOT NULL REFERENCES organizations(id),
+			url TEXT NOT NULL,
+			secret TEXT NOT NULL,
+			events TEXT NOT NULL DEFAULT 'dno.added,dno.removed',
+			active INTEGER DEFAULT 1,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Mock number registry (simulates TFNRegistry/NPAC ownership data)
+		`CREATE TABLE IF NOT EXISTS number_registry (
+			phone_number TEXT PRIMARY KEY,
+			owner_org_id INTEGER REFERENCES organizations(id),
+			number_type TEXT NOT NULL CHECK(number_type IN ('toll_free', 'local')),
+			status TEXT NOT NULL DEFAULT 'assigned' CHECK(status IN ('assigned', 'unassigned', 'ported', 'disconnected')),
+			text_enabled INTEGER DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 	return execMigrations(db, migrations)
 }
@@ -290,13 +313,41 @@ func runMigrationsPostgres(db *sql.DB) error {
 			created_at TIMESTAMPTZ DEFAULT NOW(),
 			completed_at TIMESTAMPTZ
 		)`,
+		// ITG traceback metadata columns
+		`ALTER TABLE dno_numbers ADD COLUMN IF NOT EXISTS investigation_id TEXT`,
+		`ALTER TABLE dno_numbers ADD COLUMN IF NOT EXISTS threat_category TEXT`,
+		// Webhook subscriptions
+		`CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+			id SERIAL PRIMARY KEY,
+			org_id INTEGER NOT NULL REFERENCES organizations(id),
+			url TEXT NOT NULL,
+			secret TEXT NOT NULL,
+			events TEXT NOT NULL DEFAULT 'dno.added,dno.removed',
+			active BOOLEAN DEFAULT TRUE,
+			created_at TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		// Mock number registry (simulates TFNRegistry/NPAC ownership data)
+		`CREATE TABLE IF NOT EXISTS number_registry (
+			phone_number TEXT PRIMARY KEY,
+			owner_org_id INTEGER REFERENCES organizations(id),
+			number_type TEXT NOT NULL CHECK(number_type IN ('toll_free', 'local')),
+			status TEXT NOT NULL DEFAULT 'assigned' CHECK(status IN ('assigned', 'unassigned', 'ported', 'disconnected')),
+			text_enabled BOOLEAN DEFAULT FALSE,
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		)`,
 	}
 	return execMigrations(db, migrations)
 }
 
 func execMigrations(db *sql.DB, migrations []string) error {
 	for _, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
+		_, err := db.Exec(m)
+		if err != nil {
+			// SQLite doesn't support IF NOT EXISTS for ALTER TABLE -- skip duplicate column errors
+			errStr := err.Error()
+			if strings.Contains(errStr, "duplicate column") || strings.Contains(errStr, "already exists") {
+				continue
+			}
 			return fmt.Errorf("executing migration: %w", err)
 		}
 	}
