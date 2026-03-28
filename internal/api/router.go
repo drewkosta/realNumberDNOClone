@@ -53,7 +53,7 @@ func NewRouter(
 
 	authService := service.NewAuthService(db, cfg.JWTSecret)
 	dnoService := service.NewDNOService(db, qlWriter, dnoCache, analyticsCache)
-	h := NewHandlers(dnoService, authService)
+	h := NewHandlers(db, dnoService, authService)
 
 	// Health check with DB ping
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +105,7 @@ func NewRouter(
 		r.Get("/api/dno/numbers", h.ListNumbers)
 
 		r.Post("/api/dno/bulk-upload", h.BulkUpload)
+		r.Get("/api/dno/bulk-job", h.GetBulkJobStatus)
 		r.Get("/api/dno/export", h.ExportCSV)
 
 		r.Get("/api/analytics", h.GetAnalytics)

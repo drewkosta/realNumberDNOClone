@@ -14,8 +14,10 @@ import (
 	"realNumberDNOClone/internal/cache"
 	"realNumberDNOClone/internal/config"
 	"realNumberDNOClone/internal/db"
+	"realNumberDNOClone/internal/jobs"
 	"realNumberDNOClone/internal/models"
 	"realNumberDNOClone/internal/querylog"
+	"realNumberDNOClone/internal/service"
 )
 
 func main() {
@@ -87,6 +89,11 @@ func main() {
 		)
 	}
 
+	// Background job worker for bulk uploads
+	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
+	jobWorker := jobs.NewWorker(database, dnoService.AddNumber, logger)
+	jobWorker.Start()
+
 	router := api.NewRouter(database, cfg, qlWriter, dnoCache, analyticsCache, logger)
 
 	srv := &http.Server{
@@ -115,6 +122,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	jobWorker.Stop()
 	qlWriter.Stop()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {

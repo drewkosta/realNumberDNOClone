@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -9,17 +10,19 @@ import (
 	"strconv"
 	"strings"
 
+	"realNumberDNOClone/internal/jobs"
 	"realNumberDNOClone/internal/models"
 	"realNumberDNOClone/internal/service"
 )
 
 type Handlers struct {
+	db          *sql.DB
 	dnoService  *service.DNOService
 	authService *service.AuthService
 }
 
-func NewHandlers(dnoService *service.DNOService, authService *service.AuthService) *Handlers {
-	return &Handlers{dnoService: dnoService, authService: authService}
+func NewHandlers(db *sql.DB, dnoService *service.DNOService, authService *service.AuthService) *Handlers {
+	return &Handlers{db: db, dnoService: dnoService, authService: authService}
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -208,7 +211,7 @@ func (h *Handlers) ListNumbers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// Bulk upload via CSV
+// Bulk upload via CSV (async via background job worker)
 
 func (h *Handlers) BulkUpload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10MB max
@@ -216,7 +219,7 @@ func (h *Handlers) BulkUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, _, err := r.FormFile("file")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "file field required")
 		return
@@ -236,52 +239,91 @@ func (h *Handlers) BulkUpload(w http.ResponseWriter, r *http.Request) {
 	orgID, _ := r.Context().Value(OrgIDKey).(int64)
 
 	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
+	csvRecords, err := reader.ReadAll()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid CSV file")
 		return
 	}
 
-	successCount := 0
-	errorCount := 0
-	var errors []string
-
-	for i, record := range records {
+	// Parse CSV into job records
+	var records []jobs.BulkRecord
+	for _, record := range csvRecords {
 		if len(record) == 0 {
 			continue
 		}
 		phone := strings.TrimSpace(record[0])
 		if phone == "" || phone == "phone_number" || phone == "phoneNumber" {
-			continue // skip header
+			continue
 		}
-
 		reason := ""
 		if len(record) > 1 {
 			reason = strings.TrimSpace(record[1])
 		}
-
-		req := models.AddDNORequest{
-			PhoneNumber: phone,
-			NumberType:  numberType,
-			Channel:     channel,
-			Reason:      reason,
-		}
-
-		_, err := h.dnoService.AddNumber(r.Context(), req, orgID, userID)
-		if err != nil {
-			errorCount++
-			errors = append(errors, fmt.Sprintf("row %d (%s): %s", i+1, phone, err.Error()))
-		} else {
-			successCount++
-		}
+		records = append(records, jobs.BulkRecord{PhoneNumber: phone, Reason: reason})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total":   successCount + errorCount,
-		"success": successCount,
-		"errors":  errorCount,
-		"details": errors,
+	if len(records) == 0 {
+		writeError(w, http.StatusBadRequest, "no valid records found in CSV")
+		return
+	}
+
+	fileName := ""
+	if header != nil {
+		fileName = header.Filename
+	}
+
+	jobID, err := jobs.EnqueueBulkAdd(r.Context(), h.db, orgID, userID, records, channel, numberType, fileName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to enqueue job: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"jobId":        jobID,
+		"status":       "pending",
+		"totalRecords": len(records),
+		"message":      "Bulk upload queued for background processing",
 	})
+}
+
+func (h *Handlers) GetBulkJobStatus(w http.ResponseWriter, r *http.Request) {
+	jobID, err := strconv.ParseInt(r.URL.Query().Get("jobId"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "jobId query parameter required")
+		return
+	}
+
+	var job models.BulkJob
+	var fileName, resultSummary sql.NullString
+	var completedAt sql.NullTime
+	err = h.db.QueryRowContext(r.Context(),
+		`SELECT id, org_id, user_id, job_type, status, total_records, processed_records, success_count, error_count, file_name, result_summary, created_at, completed_at
+		 FROM bulk_jobs WHERE id = ?`, jobID,
+	).Scan(&job.ID, &job.OrgID, &job.UserID, &job.JobType, &job.Status, &job.TotalRecords, &job.ProcessedRecords,
+		&job.SuccessCount, &job.ErrorCount, &fileName, &resultSummary, &job.CreatedAt, &completedAt)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	if fileName.Valid {
+		job.FileName = &fileName.String
+	}
+	if resultSummary.Valid {
+		job.ResultSummary = &resultSummary.String
+	}
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+
+	// Verify the requesting user's org owns this job
+	orgID, _ := r.Context().Value(OrgIDKey).(int64)
+	role, _ := r.Context().Value(RoleKey).(string)
+	if role != "admin" && job.OrgID != orgID {
+		writeError(w, http.StatusForbidden, "not authorized to view this job")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, job)
 }
 
 // Export as CSV flat file (streaming)
