@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import type { User } from '../types';
 import {
   LayoutDashboard,
   Search,
@@ -15,17 +16,19 @@ import {
   Phone,
 } from 'lucide-react';
 
-const navItems = [
+type Role = User['role'];
+
+const navItems: { to: string; icon: typeof LayoutDashboard; label: string; end?: boolean; minRole?: Role[] }[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/query', icon: Search, label: 'Query Numbers' },
   { to: '/numbers', icon: List, label: 'DNO List' },
-  { to: '/bulk', icon: Upload, label: 'Bulk Operations' },
+  { to: '/bulk', icon: Upload, label: 'Bulk Operations', minRole: ['admin', 'org_admin', 'operator'] },
   { to: '/analyzer', icon: Scan, label: 'DNO Analyzer' },
   { to: '/compliance', icon: ShieldCheck, label: 'Compliance' },
-  { to: '/webhooks', icon: Webhook, label: 'Webhooks' },
+  { to: '/webhooks', icon: Webhook, label: 'Webhooks', minRole: ['admin', 'org_admin'] },
   { to: '/roi', icon: Calculator, label: 'ROI Calculator' },
   { to: '/audit', icon: ScrollText, label: 'Audit Log' },
-  { to: '/admin', icon: Shield, label: 'Admin', adminOnly: true },
+  { to: '/admin', icon: Shield, label: 'Admin', minRole: ['admin'] },
 ];
 
 export default function Layout() {
@@ -37,9 +40,10 @@ export default function Layout() {
     void navigate('/login');
   };
 
+  const role = user?.role;
+
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col animate-slide-left">
         <div className="p-6 border-b border-slate-700">
           <div className="flex items-center gap-3 group cursor-default">
@@ -55,7 +59,7 @@ export default function Layout() {
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item, index) => {
-            if (item.adminOnly && user?.role !== 'admin') return null;
+            if (item.minRole && role && !item.minRole.includes(role)) return null;
             return (
               <NavLink
                 key={item.to}
@@ -96,7 +100,6 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main content */}
       <main className="flex-1 overflow-auto">
         <div className="p-8 page-enter">
           <Outlet />

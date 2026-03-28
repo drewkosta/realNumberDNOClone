@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth';
+import type { User } from './types';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -16,6 +17,12 @@ import AdminPage from './pages/AdminPage';
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RoleGuard({ allowed, children }: { allowed: User['role'][]; children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user || !allowed.includes(user.role)) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -36,13 +43,13 @@ function AppRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="query" element={<QueryPage />} />
         <Route path="numbers" element={<NumbersPage />} />
-        <Route path="bulk" element={<BulkPage />} />
+        <Route path="bulk" element={<RoleGuard allowed={['admin', 'org_admin', 'operator']}><BulkPage /></RoleGuard>} />
         <Route path="analyzer" element={<AnalyzerPage />} />
         <Route path="compliance" element={<CompliancePage />} />
-        <Route path="webhooks" element={<WebhooksPage />} />
+        <Route path="webhooks" element={<RoleGuard allowed={['admin', 'org_admin']}><WebhooksPage /></RoleGuard>} />
         <Route path="roi" element={<ROIPage />} />
         <Route path="audit" element={<AuditPage />} />
-        <Route path="admin" element={<AdminPage />} />
+        <Route path="admin" element={<RoleGuard allowed={['admin']}><AdminPage /></RoleGuard>} />
       </Route>
     </Routes>
   );

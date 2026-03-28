@@ -3,9 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { dnoApi } from '../api';
 import { Plus, Trash2, Download, Search, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useAuth } from '../auth';
 import type { OwnershipValidation } from '../types';
 
 export default function NumbersPage() {
+  const { user } = useAuth();
+  const canEdit = user?.role !== 'viewer';
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -57,25 +60,29 @@ export default function NumbersPage() {
           <p className="text-gray-500 mt-1">Manage the Do Not Originate subscriber list</p>
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={() => void dnoApi.exportCSV()}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
-          <button
-            onClick={() => setShowAdd(!showAdd)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" />
-            Add Number
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => void dnoApi.exportCSV()}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+          )}
+          {canEdit && (
+            <button
+              onClick={() => setShowAdd(!showAdd)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add Number
+            </button>
+          )}
         </div>
       </div>
 
       {/* Add number form */}
-      {showAdd && (
+      {canEdit && showAdd && (
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6 animate-fade-down">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Number to DNO List</h2>
           <form
@@ -290,7 +297,7 @@ export default function NumbersPage() {
                         {new Date(n.updatedAt).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
-                        {n.dataset === 'subscriber' && n.status === 'active' && (
+                        {canEdit && n.dataset === 'subscriber' && n.status === 'active' && (
                           <button
                             onClick={() =>
                               removeMutation.mutate({ phone: n.phoneNumber, ch: n.channel })

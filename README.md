@@ -8,6 +8,7 @@ This system maintains a database of phone numbers that should never appear as th
 
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
+- [Roles & Access Model](#roles--access-model)
 - [Environment Configuration](#environment-configuration)
 - [API Reference](#api-reference)
 - [Frontend](#frontend)
@@ -21,32 +22,67 @@ This system maintains a database of phone numbers that should never appear as th
 
 ## Architecture
 
+The system is split into four microservices sharing a common database, with an API gateway routing traffic to the appropriate service.
+
 ```
-┌─────────────────┐     ┌──────────────────────────────────────────────────┐
-│  React Client   │────▶│  Go HTTP Server (chi)                            │
-│  Vite + TS +    │     │                                                  │
-│  Tailwind       │     │  ┌──────────┐  ┌───────────┐  ┌──────────────┐  │
-│  TanStack Query │     │  │ Auth     │  │ DNO       │  │ Analytics    │  │
-│  Recharts       │     │  │ Service  │  │ Service   │  │ (cached)     │  │
-└─────────────────┘     │  └────┬─────┘  └─────┬─────┘  └──────┬───────┘  │
-                        │       │              │               │          │
-                        │  ┌────▼──────────────▼───────────────▼───────┐  │
-                        │  │  DB Abstraction Layer                     │  │
-                        │  │  PostgreSQL (default) | SQLite (local)    │  │
-                        │  │  Reader/Writer split  | $N → ? rewrite   │  │
-                        │  └───────────────────────────────────────────┘  │
-                        │                                                  │
-                        │  ┌──────────────┐  ┌─────────────┐  ┌────────┐  │
-                        │  │ Async Query  │  │ LRU Cache   │  │ Job    │  │
-                        │  │ Log Writer   │  │ (DNO +      │  │ Worker │  │
-                        │  │ (buffered)   │  │  Analytics) │  │ (bulk) │  │
-                        │  └──────────────┘  └─────────────┘  └────────┘  │
-                        └──────────────────────────────────────────────────┘
+┌─────────────────┐
+│  React Client   │
+│  Vite + TS +    │
+│  Tailwind       │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│    Gateway      │ :8080
+│  (reverse proxy)│
+└───┬─────────┬───┘
+    │         │
+    │ /api/dno/query    everything else
+    │ /api/dno/query/   ──────────┐
+    │   bulk                      │
+    ▼                             ▼
+┌──────────────┐         ┌───────────────┐
+│ Query Service│ :8081   │ Portal Service│ :8082
+│              │         │               │
+│ DNO lookups  │         │ Auth & login  │
+│ LRU cache    │         │ Number CRUD   │
+│ Async query  │         │ Analytics     │
+│   log writer │         │ Compliance    │
+│ Rate limiting│         │ Webhooks      │
+│              │         │ DNO Analyzer  │
+│ API key +    │         │ ROI calculator│
+│   JWT auth   │         │ Admin tools   │
+└──────┬───────┘         └───────┬───────┘
+       │                         │
+       └────────────┬────────────┘
+                    │
+            ┌───────▼───────┐
+            │ Worker Service│ (no HTTP)
+            │               │
+            │ Bulk job      │
+            │   processing  │
+            │ TSS sync      │
+            │ NPAC events   │
+            └───────┬───────┘
+                    │
+            ┌───────▼───────┐
+            │  PostgreSQL   │ (default)
+            │  SQLite       │ (local dev)
+            └───────────────┘
 ```
 
-**Backend:** Go 1.25, chi router, JWT auth, bcrypt, SQLite/PostgreSQL
+**Backend:** Go, chi router, JWT + API key auth, bcrypt, SQLite/PostgreSQL
 **Frontend:** React 19, TypeScript, Vite, Tailwind CSS 4, TanStack Query, Recharts
 **Observability:** Structured JSON logging (slog), Prometheus metrics, request IDs
+
+### Services
+
+| Service | Port | Responsibility |
+|---------|------|----------------|
+| **Gateway** | 8080 | Reverse proxy, CORS, routes queries to query-service and everything else to portal-service |
+| **Query Service** | 8081 | Hot-path DNO lookups (single + bulk), LRU cache, async query log writer. Independently scalable. |
+| **Portal Service** | 8082 | Auth, number management, analytics, compliance, webhooks, DNO analyzer, ROI calculator, admin |
+| **Worker Service** | -- | Background job processor for bulk uploads, TSS registry sync, NPAC porting events. No HTTP server. |
 
 ---
 
@@ -56,7 +92,7 @@ This system maintains a database of phone numbers that should never appear as th
 
 - Go 1.23+ (CGO enabled for SQLite)
 - Node.js 18+
-- (Optional) Docker for local PostgreSQL
+- (Optional) Docker for PostgreSQL and full microservices deployment
 
 ### First Run
 
@@ -64,41 +100,56 @@ This system maintains a database of phone numbers that should never appear as th
 # Install frontend dependencies
 make install
 
-# Start backend (with seed data) + frontend dev server
+# Seed database + start all microservices + frontend
 make dev-seed
 ```
 
 This starts:
-- **Backend** on `http://localhost:8080` (SQLite, seeded with 1300+ mock DNO numbers)
+- **Gateway** on `http://localhost:8080` (routes to query + portal)
+- **Query Service** on `http://localhost:8081`
+- **Portal Service** on `http://localhost:8082`
+- **Worker Service** (background, no port)
 - **Frontend** on `http://localhost:5173` (Vite dev server with hot reload)
 
-### Default Login
+The frontend proxies API calls through Vite to the gateway on `:8080`.
 
-| Email | Password |
-|-------|----------|
-| `admin@realnumber.local` | `admin123` |
+### Demo Accounts
 
-Seed data also creates 10 additional users with password `password123`:
+The seed creates accounts for every role so you can test each access level:
 
-| Email | Role | Organization |
-|-------|------|--------------|
-| `jsmith@acmetelecom.com` | org_admin | Acme Telecom |
-| `alee@securegate.com` | operator | SecureGate Systems |
-| `tgarcia@pacificbell.com` | org_admin | Pacific Bell Services |
-| `viewer@realnumber.local` | viewer | System Admin |
-| `operator@realnumber.local` | operator | System Admin |
+| Role | Email | Password | Organization |
+|------|-------|----------|--------------|
+| **admin** | `admin@realnumber.local` | `admin123` | System Admin (platform operator) |
+| **org_admin** | `jsmith@acmetelecom.com` | `password123` | Acme Telecom (carrier) |
+| **org_admin** | `tgarcia@pacificbell.com` | `password123` | Pacific Bell Services (resp org) |
+| **operator** | `alee@securegate.com` | `password123` | SecureGate Systems (gateway provider) |
+| **operator** | `operator@realnumber.local` | `password123` | System Admin |
+| **viewer** | `viewer@realnumber.local` | `password123` | System Admin (read-only) |
 
-### Using Local PostgreSQL
+These are also displayed on the login page in local dev.
+
+### Test API Keys (seeded)
+
+| Organization | API Key |
+|-------------|---------|
+| Acme Telecom | `dno_test_acme_carrier_key_12345` |
+| SecureGate Systems | `dno_test_securegate_gw_key_67890` |
+
+### Using Docker (full stack with PostgreSQL)
 
 ```bash
-# Start PostgreSQL container
-make pg-up
+docker compose up --build
+```
 
-# Run with PostgreSQL instead of SQLite
-make run-local-pg-seed
+This runs all four services + PostgreSQL in containers.
 
-# Stop PostgreSQL
-make pg-down
+### Using Local PostgreSQL (without Docker services)
+
+```bash
+make pg-up          # Start PostgreSQL container
+make seed           # Seed the database
+make dev            # Start all services + frontend
+make pg-down        # Stop PostgreSQL
 ```
 
 ---
@@ -133,8 +184,6 @@ API keys are:
 
 ### Organization Types
 
-These map to telecom industry roles:
-
 | Org Type | Industry Role | Typical Usage |
 |----------|---------------|---------------|
 | **carrier** | US telecom operators (AT&T, Verizon, T-Mobile, etc.) | Query DNO list in real-time to block spoofed calls on their network |
@@ -153,24 +202,26 @@ These map to telecom industry roles:
 
 ## Environment Configuration
 
-Six environments with tailored defaults. Set via `--env` flag:
+Six environments with tailored defaults. Set via `--env` flag on each service:
 
-| Environment | DB Driver | DB File/DSN | JWT Secret | Rate Limit | Cache TTL | Seed |
-|-------------|-----------|-------------|------------|------------|-----------|------|
-| `local` | SQLite | `realnumber_local.db` | hardcoded | disabled | 30s | yes |
-| `dev` | SQLite | `realnumber_dev.db` | hardcoded | 100 rps | 30s | yes |
-| `testing` | SQLite | `realnumber_test.db` | hardcoded | disabled | disabled | yes |
-| `staging` | **PostgreSQL** | `DATABASE_URL` required | `JWT_SECRET` required | 500 rps | 60s | no |
-| `pre-prod` | **PostgreSQL** | `DATABASE_URL` required | `JWT_SECRET` required | 1000 rps | 60s | no |
-| `production` | **PostgreSQL** | `DATABASE_URL` required | `JWT_SECRET` required | 2000 rps | 45s | no |
+| Environment | DB Driver | JWT Secret | Rate Limit | Cache TTL | Seed |
+|-------------|-----------|------------|------------|-----------|------|
+| `local` | SQLite | hardcoded | disabled | 30s | yes |
+| `dev` | SQLite | hardcoded | 100 rps | 30s | yes |
+| `testing` | SQLite | hardcoded | disabled | disabled | yes |
+| `staging` | **PostgreSQL** | required | 500 rps | 60s | no |
+| `pre-prod` | **PostgreSQL** | required | 1000 rps | 60s | no |
+| `production` | **PostgreSQL** | required | 2000 rps | 45s | no |
 
 ### Environment Variables
 
-All config values can be overridden via environment variables:
-
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `PORT` | Server port | `8080` |
+| `GATEWAY_PORT` | Gateway listen port | `8080` |
+| `QUERY_PORT` | Query service listen port | `8081` |
+| `PORTAL_PORT` | Portal service listen port | `8082` |
+| `QUERY_SERVICE_URL` | Gateway -> query service URL | `http://localhost:8081` |
+| `PORTAL_SERVICE_URL` | Gateway -> portal service URL | `http://localhost:8082` |
 | `DB_DRIVER` | `sqlite` or `postgres` | `postgres` |
 | `DB_PATH` | SQLite file path | `realnumber_local.db` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://user:pass@host:5432/db?sslmode=disable` |
@@ -179,7 +230,6 @@ All config values can be overridden via environment variables:
 | `CORS_ORIGIN` | Allowed origin | `https://app.example.com` |
 | `ADMIN_PASSWORD` | Override default admin password | `secure-password` |
 | `RATE_LIMIT_RPS` | Requests per second per org | `1000` |
-| `ALLOW_SEED` | Override seed permission | `true` |
 
 ---
 
@@ -187,169 +237,77 @@ All config values can be overridden via environment variables:
 
 Two authentication methods are supported:
 
-- **JWT Bearer token** (portal users): `Authorization: Bearer <token>` -- full API access
-- **API key** (external integrations): `X-API-Key: <key>` -- query endpoints only
+- **JWT Bearer token** (portal users): `Authorization: Bearer <token>` -- full API access via portal-service
+- **API key** (external integrations): `X-API-Key: <key>` -- query endpoints only via query-service
 
-Public endpoints: `/health`, `/metrics`, `/api/auth/login`
+All endpoints are accessible through the gateway on `:8080`.
 
 ### Authentication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/auth/login` | Login with email/password, returns JWT (rate limited: 5/min per IP) |
-| `GET` | `/api/auth/me` | Get current authenticated user |
+| Method | Endpoint | Service | Description |
+|--------|----------|---------|-------------|
+| `POST` | `/api/auth/login` | portal | Login, returns JWT (rate limited: 5/min per IP) |
+| `GET` | `/api/auth/me` | portal | Get current authenticated user |
 
-**Login request:**
-```json
-{ "email": "admin@realnumber.local", "password": "admin123" }
-```
-
-**Login response:**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "user": { "id": 1, "email": "admin@realnumber.local", "firstName": "System", "lastName": "Admin", "role": "admin", "orgId": 1 }
-}
-```
-
-### DNO Queries
+### DNO Queries (query-service)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/dno/query?phoneNumber=5551234567&channel=voice` | Single number DNO lookup |
 | `POST` | `/api/dno/query/bulk` | Bulk lookup (up to 1000 numbers) |
 
-**Single query response:**
-```json
-{
-  "phoneNumber": "5551234567",
-  "isDno": true,
-  "dataset": "subscriber",
-  "channel": "voice",
-  "status": "active",
-  "lastUpdated": "2026-01-15T10:30:00Z"
-}
-```
-
-**Bulk query request:**
-```json
-{ "phoneNumbers": ["5551234567", "8001234567"], "channel": "voice" }
-```
-
-**Bulk query response:**
-```json
-{
-  "results": [ ... ],
-  "total": 2,
-  "hits": 1,
-  "misses": 1
-}
-```
-
-### DNO Number Management
+### DNO Number Management (portal-service)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/dno/numbers` | Add number to subscriber DNO list |
 | `DELETE` | `/api/dno/numbers?phoneNumber=...&channel=voice` | Remove number (subscriber set only, own org) |
-| `GET` | `/api/dno/numbers?page=1&pageSize=25&dataset=subscriber&status=active&channel=voice&search=555` | List numbers with filtering/pagination |
+| `GET` | `/api/dno/numbers?page=1&pageSize=25&dataset=...&status=...&channel=...&search=...` | List with filtering/pagination |
+| `GET` | `/api/dno/validate-ownership?phoneNumber=...` | Check number ownership against mock registry |
 
-**Add number request:**
-```json
-{
-  "phoneNumber": "5551234567",
-  "numberType": "local",
-  "channel": "voice",
-  "reason": "Customer service inbound only"
-}
-```
-
-### Bulk Operations
+### Bulk Operations (portal + worker)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/dno/bulk-upload` | Upload CSV for async background processing |
+| `POST` | `/api/dno/bulk-upload` | Upload CSV for async background processing (returns 202 + jobId) |
 | `GET` | `/api/dno/bulk-job?jobId=1` | Check bulk job status/progress |
 | `GET` | `/api/dno/export` | Download full DNO database as CSV flat file |
 
-Bulk uploads are processed asynchronously by a background worker. The upload endpoint returns `202 Accepted` with a `jobId` immediately:
-
-```json
-{
-  "jobId": 1,
-  "status": "pending",
-  "totalRecords": 500,
-  "message": "Bulk upload queued for background processing"
-}
-```
-
-**CSV format:**
-```
-phone_number,reason
-5551234567,Customer service inbound only
-8001234567,Toll-free advertising number
-```
-
-**Export flat file format** (compatible with RealNumber DNO):
-```
-phone_number,last_update_date,status_flag,dataset,channel,number_type
-5551234567,2026-01-15T10:30:00Z,1,subscriber,voice,local
-8001234567,2026-01-14T08:00:00Z,0,auto,voice,toll_free
-```
-
-Status flag: `0` = Auto Set (system-determined), `1` = Subscriber Set (manually flagged)
-
-### Analytics
+### Analytics & Compliance
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/analytics` | Dashboard analytics (cached, org-scoped for non-admins) |
+| `GET` | `/api/audit-log?page=1&pageSize=25` | Paginated audit trail |
+| `GET` | `/api/compliance-report` | FCC compliance assessment for RMD filings |
+| `GET` | `/api/roi-calculator?dailyCallVolume=50000` | Estimate blocked calls and annual savings |
+| `POST` | `/api/analyzer` | DNO Analyzer: upload CDR data, get fraud exposure report |
 
-**Response:**
-```json
-{
-  "totalDnoNumbers": 1300,
-  "activeNumbers": 1300,
-  "byDataset": { "auto": 800, "subscriber": 300, "itg": 50, "tss_registry": 150 },
-  "byChannel": { "voice": 1100, "text": 150, "both": 50 },
-  "byNumberType": { "local": 750, "toll_free": 550 },
-  "totalQueries24h": 1005,
-  "hitRate24h": 15.2,
-  "queriesByHour": [ { "hour": "2026-03-28 14:00", "count": 42 }, ... ],
-  "recentAdditions": 12,
-  "recentRemovals": 3
-}
-```
-
-### Audit Log
+### Webhooks
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/audit-log?page=1&pageSize=25` | Paginated audit trail (org-scoped for non-admins) |
+| `POST` | `/api/webhooks` | Create webhook subscription (HMAC-SHA256 signed) |
+| `GET` | `/api/webhooks` | List webhook subscriptions |
+| `DELETE` | `/api/webhooks?id=N` | Delete webhook subscription |
 
 ### Admin
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/admin/users` | Create user (admin only, min 8-char password, validated role) |
-| `POST` | `/api/admin/api-keys?orgId=N` | Generate API key for an org (returns raw key once) |
-| `DELETE` | `/api/admin/api-keys?orgId=N` | Revoke API key for an org |
-
-**Generate API key response:**
-```json
-{
-  "orgId": 3,
-  "apiKey": "dno_9ff41df336e9eda0...",
-  "note": "Store this key securely. It cannot be retrieved again."
-}
-```
+| `POST` | `/api/admin/users` | Create user (min 8-char password, validated role) |
+| `POST` | `/api/admin/api-keys?orgId=N` | Generate API key for an org |
+| `DELETE` | `/api/admin/api-keys?orgId=N` | Revoke API key |
+| `POST` | `/api/admin/itg-ingest` | Add number to ITG traceback set with investigation metadata |
+| `POST` | `/api/admin/npac-event` | Simulate NPAC porting event (mock) |
+| `POST` | `/api/admin/tss-sync` | Sync non-text-enabled TFNs to text DNO (mock) |
 
 ### Infrastructure
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/health` | Health check with DB ping (returns `ok` or `degraded`) |
-| `GET` | `/metrics` | Prometheus metrics scrape endpoint |
+| `GET` | `/health` | Health check with DB ping (available on each service) |
+| `GET` | `/metrics` | Prometheus metrics scrape endpoint (each service) |
 
 ---
 
@@ -360,22 +318,27 @@ Status flag: `0` = Auto Set (system-determined), `1` = Subscriber Set (manually 
 | Page | Path | Description |
 |------|------|-------------|
 | Login | `/login` | JWT authentication |
-| Dashboard | `/` | Analytics overview with charts (queries/hour, dataset distribution, hit rate) |
-| Query Numbers | `/query` | Single and bulk DNO lookups with color-coded hit/miss results |
-| DNO List | `/numbers` | Full CRUD with filtering by dataset/channel/status, pagination, search |
+| Dashboard | `/` | Analytics with charts (queries/hour, dataset distribution, hit rate) |
+| Query Numbers | `/query` | Single and bulk DNO lookups with color-coded hit/miss |
+| DNO List | `/numbers` | Full CRUD with filtering, pagination, search, ownership validation on add |
 | Bulk Operations | `/bulk` | CSV upload (async) and flat file export |
+| DNO Analyzer | `/analyzer` | Upload CDR traffic data, get fraud exposure report with charts |
+| Compliance | `/compliance` | FCC compliance assessment, dataset coverage, recommendations, JSON download |
+| Webhooks | `/webhooks` | Create/list/delete webhook subscriptions with payload docs |
+| ROI Calculator | `/roi` | Volume slider, projected blocked calls and annual savings |
 | Audit Log | `/audit` | Paginated activity trail |
-| Admin | `/admin` | User creation with role selection (admin only) |
+| Admin | `/admin` | User creation, API key management, ITG ingest, NPAC/TSS mock integrations |
 
 ### Tech Stack
 
 - **Vite** for dev server with HMR and production builds
 - **React Router** for client-side routing
 - **TanStack Query** for server state management with automatic refetching
-- **Tailwind CSS 4** for styling (via `@tailwindcss/vite` plugin)
+- **Tailwind CSS 4** via `@tailwindcss/vite` plugin
 - **Recharts** for dashboard bar charts and pie charts
 - **Lucide React** for icons
-- **Axios** for HTTP client with JWT interceptor and 401 auto-redirect
+- **Axios** with JWT interceptor and 401 auto-redirect
+- **Micro-transitions** throughout: staggered card entrances, button press effects, skeleton loading, cache-animated stat values
 
 ---
 
@@ -383,113 +346,56 @@ Status flag: `0` = Auto Set (system-determined), `1` = Subscriber Set (manually 
 
 ### DNO Data Model
 
-The system mirrors the four datasets from the real Somos RealNumber DNO product:
-
 | Dataset | Source | Description |
 |---------|--------|-------------|
-| **Auto Set** | System-generated | Unassigned, disconnected, and spare numbers from NANP/TFNRegistry/NPAC |
-| **Subscriber Set** | Manually flagged by org owners | Inbound-only numbers (hotlines, IVRs, conference bridges, vanity numbers) |
-| **ITG Set** | Industry Traceback Group | Numbers identified through traceback as spoofed for illegal/fraudulent calls |
-| **TSS Registry Set** | TSS Registry | Non-text-enabled toll-free numbers (text DNO only) |
-
-### Schema
-
-```
-organizations    users           dno_numbers       query_log
-─────────────    ──────          ────────────       ──────────
-id               id              id                 id
-name             email           phone_number       org_id
-org_type         password_hash   dataset            phone_number
-spid             first_name      number_type        result (hit/miss)
-resp_org_id      last_name       channel            channel
-api_key          role            status             queried_at
-                 org_id          reason
-                 active          added_by_org_id
-
-audit_log        bulk_jobs
-──────────       ──────────
-id               id
-user_id          org_id
-org_id           user_id
-action           job_type
-entity_type      status
-entity_id        total_records
-details          processed_records
-created_at       success_count
-                 error_count
-                 file_name
-                 result_summary
-                 completed_at
-```
+| **Auto Set** | System-generated / NPAC | Unassigned, disconnected, and spare numbers |
+| **Subscriber Set** | Manually flagged by org owners | Inbound-only numbers (hotlines, IVRs, conference bridges) |
+| **ITG Set** | Industry Traceback Group | Numbers identified via traceback as spoofed (with investigation ID + threat category) |
+| **TSS Registry Set** | TSS Registry sync | Non-text-enabled toll-free numbers (text DNO only) |
 
 ### Dual-Driver Support
 
-All service SQL is written in **PostgreSQL dialect** (`$1, $2, ...` placeholders, `date_trunc`, `NOW()`). For SQLite (local dev), a transparent adapter rewrites:
-
+All service SQL is written in **PostgreSQL dialect** (`$1, $2, ...`). For SQLite (local dev), a transparent adapter rewrites:
 - `$N` placeholders to `?`
 - `date_trunc('hour', col)` to `strftime('%Y-%m-%d %H:00', col)`
 - `NOW()` to `CURRENT_TIMESTAMP`
 
-This is handled by `DB.Q()`, `DB.QTimeTrunc()`, and `DB.QNow()` in `internal/db/db.go`.
-
 ### SQLite Reader/Writer Split
 
-In SQLite mode, the DB layer opens two separate connection pools:
-
-- **Writer** (`MaxOpenConns=1`): Serializes all writes to avoid `SQLITE_BUSY`
+- **Writer** (`MaxOpenConns=1`): Serializes all writes
 - **Reader** (`MaxOpenConns=10`): Concurrent reads via WAL mode
 
-In PostgreSQL mode, both point to the same connection pool (`MaxOpenConns=25`).
-
-### Indexes
-
-```sql
--- Hot-path composite index for DNO lookups
-CREATE INDEX idx_dno_lookup ON dno_numbers(phone_number, channel, status);
-
--- Filtering indexes
-CREATE INDEX idx_dno_dataset ON dno_numbers(dataset);
-CREATE INDEX idx_dno_org ON dno_numbers(added_by_org_id);
-
--- Query log time-series
-CREATE INDEX idx_query_log_time ON query_log(queried_at);
-CREATE INDEX idx_query_log_org ON query_log(org_id);
-
--- Audit log
-CREATE INDEX idx_audit_time ON audit_log(created_at);
-CREATE INDEX idx_audit_org ON audit_log(org_id);
-```
+In PostgreSQL mode, both point to the same pool (`MaxOpenConns=25`).
 
 ---
 
 ## Scaling & Performance
 
-### What's Implemented
-
 | Feature | Description |
 |---------|-------------|
-| **Async query logging** | DNO lookups no longer do synchronous INSERTs. Query log entries are buffered in memory and batch-flushed to DB on a timer/threshold (configurable per environment). |
-| **In-process LRU cache** | DNO lookup results are cached with configurable TTL (30-60s). Cache is invalidated on add/remove. Eliminates DB reads for repeated queries. |
-| **Analytics caching** | Analytics summary is cached (30-60s TTL) to avoid repeated full-table aggregations. |
-| **Batch bulk queries** | Bulk lookups use a single `WHERE phone_number IN (...)` query instead of N+1 individual queries. |
-| **Background job worker** | CSV bulk uploads are processed asynchronously by a polling worker, not inline in the HTTP request. |
-| **Rate limiting** | Per-org rate limiting on API endpoints (configurable RPS). Login endpoint rate limited to 5/min per IP. |
-| **HTTP server timeouts** | `ReadHeaderTimeout: 5s`, `ReadTimeout: 10s`, `WriteTimeout: 30s`, `IdleTimeout: 120s` |
-| **Streaming CSV export** | Export streams rows directly from DB to response writer, not buffered in memory. |
-| **Composite indexes** | `(phone_number, channel, status)` covers the exact hot-path query. |
-| **Reader/Writer split** | SQLite concurrent reads via WAL; PostgreSQL shared pool. |
+| **Microservice architecture** | Query service scales independently from portal and worker |
+| **Async query logging** | Buffered batch-flush, no synchronous INSERT on the hot path |
+| **In-process LRU cache** | DNO lookups cached with TTL, invalidated on add/remove |
+| **Analytics caching** | 30-60s TTL to avoid repeated full-table aggregations |
+| **Batch bulk queries** | Single `WHERE IN (...)` instead of N+1 queries |
+| **Background job worker** | Async bulk uploads via separate worker process |
+| **Per-org rate limiting** | Configurable RPS via `httprate`, login rate limited per IP |
+| **HTTP server timeouts** | Read: 10s, Write: 30s, Idle: 120s |
+| **Streaming CSV export** | Rows streamed directly from DB, not buffered in memory |
+| **Composite indexes** | `(phone_number, channel, status)` covers the hot-path query |
+| **Reader/Writer split** | Concurrent reads on SQLite; shared pool on PostgreSQL |
 
 ### Seed Data
 
-The `--seed` flag generates realistic mock data:
-
-| Data | Count | Details |
-|------|-------|---------|
-| Organizations | 8 | Carriers, gateway providers, resp orgs |
-| Users | 10 | Various roles across organizations |
-| DNO Numbers | ~1,330 | Across all 4 datasets, voice/text/both channels, local and toll-free |
-| Query Logs | 2,000 | Spread over 48 hours with ~17% hit rate (matching real-world) |
-| Audit Logs | 200 | Add/remove actions over 30 days |
+| Data | Count |
+|------|-------|
+| Organizations | 8 (carriers, gateway providers, resp orgs) |
+| Users | 10 (various roles) |
+| DNO Numbers | ~1,330 (all 4 datasets) |
+| Query Logs | 2,000 (48h, ~17% hit rate) |
+| Audit Logs | 200 (30 days) |
+| Number Registry | 550 (mock TFNRegistry/NPAC) |
+| API Keys | 2 (test keys for Acme + SecureGate) |
 
 ---
 
@@ -497,7 +403,7 @@ The `--seed` flag generates realistic mock data:
 
 ### Structured Logging
 
-All logs are JSON via Go's `slog` package:
+All services emit JSON logs via `slog`:
 
 ```json
 {
@@ -513,31 +419,26 @@ All logs are JSON via Go's `slog` package:
 }
 ```
 
-Log level is configurable per environment (`debug` for local, `error` for production).
-
 ### Prometheus Metrics
 
-Available at `GET /metrics`:
+Each service exposes `GET /metrics`:
 
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `http_requests_total` | counter | method, path, status | Total HTTP requests |
-| `http_request_duration_seconds` | histogram | method, path | Request latency |
-| `dno_query_total` | counter | channel, result | DNO lookups (hit/miss) |
-| `dno_query_duration_seconds` | histogram | | DNO lookup latency |
-| `dno_bulk_query_size` | histogram | | Batch sizes for bulk queries |
-| `cache_hits_total` | counter | cache (dno, analytics) | Cache hit count |
-| `cache_misses_total` | counter | cache (dno, analytics) | Cache miss count |
+| Metric | Type | Labels |
+|--------|------|--------|
+| `http_requests_total` | counter | method, path, status |
+| `http_request_duration_seconds` | histogram | method, path |
+| `dno_query_total` | counter | channel, result |
+| `dno_query_duration_seconds` | histogram | |
+| `dno_bulk_query_size` | histogram | |
+| `cache_hits_total` / `cache_misses_total` | counter | cache |
 
 ### Health Check
 
-`GET /health` pings the database and returns:
+Each service exposes `GET /health` with DB ping and service name:
 
 ```json
-{ "status": "ok", "env": "local", "db": "ok" }
+{ "status": "ok", "env": "local", "service": "query-service", "db": "ok" }
 ```
-
-Returns `"status": "degraded"` with error details if the DB is unreachable.
 
 ---
 
@@ -545,37 +446,54 @@ Returns `"status": "degraded"` with error details if the DB is unreachable.
 
 ```
 .
-├── cmd/server/main.go              # Entrypoint: config, DB, cache, workers, server
+├── cmd/
+│   ├── gateway/main.go             # API gateway (reverse proxy)
+│   ├── query-service/main.go       # DNO lookup service (hot path)
+│   ├── portal-service/main.go      # Management API service
+│   └── worker-service/main.go      # Background job processor + seed tool
 ├── internal/
 │   ├── api/
-│   │   ├── router.go               # Chi router, middleware chain, route definitions
-│   │   ├── handlers.go             # HTTP handlers (request parsing, response writing)
-│   │   └── middleware.go           # JWT auth middleware, admin-only guard
+│   │   ├── handlers_common.go      # Shared Handlers struct, JSON helpers
+│   │   ├── handlers_query.go       # QueryNumber, BulkQuery
+│   │   ├── handlers_portal.go      # Auth, number CRUD, bulk ops, analytics, audit
+│   │   ├── handlers_admin.go       # User mgmt, API keys, ITG ingest, NPAC/TSS
+│   │   ├── handlers_integrations.go # Webhooks, ownership, analyzer, compliance, ROI
+│   │   ├── middleware.go           # JWT auth, API key auth, admin-only guard
+│   │   ├── router_query.go        # Query service routes
+│   │   ├── router_portal.go       # Portal service routes
+│   │   └── router_common.go       # Shared CORS, health, slog middleware
+│   ├── boot/
+│   │   ├── boot.go                 # Shared App bootstrap (config + DB + logger)
+│   │   └── serve.go               # Graceful HTTP server with signal handling
 │   ├── service/
 │   │   ├── dno.go                  # DNO business logic (query, add, remove, analytics)
-│   │   └── auth.go                 # Auth business logic (login, JWT, user CRUD)
+│   │   ├── auth.go                 # Auth (login, JWT, user CRUD)
+│   │   ├── apikey.go              # API key generation, hashing, validation
+│   │   └── features.go            # ITG ingest, webhooks, analyzer, compliance, ROI, NPAC/TSS
 │   ├── db/
-│   │   ├── db.go                   # DB init, migrations, reader/writer split, Q() adapter
-│   │   └── seed.go                 # Mock data seeder for local development
+│   │   ├── db.go                   # DB init, migrations (SQLite + PostgreSQL), Q() adapter
+│   │   └── seed.go                 # Mock data seeder
 │   ├── config/config.go            # Environment-based configuration
 │   ├── models/models.go            # Domain types, request/response structs, validators
-│   ├── cache/cache.go              # Generic TTL cache with concurrent-safe eviction
+│   ├── cache/cache.go              # Generic TTL cache
 │   ├── querylog/writer.go          # Async buffered query log writer
-│   ├── jobs/worker.go              # Background job worker for bulk uploads
-│   └── metrics/metrics.go          # Prometheus metric definitions and HTTP middleware
+│   ├── jobs/worker.go              # Background job worker
+│   └── metrics/metrics.go          # Prometheus metrics + HTTP middleware
 ├── client/
 │   ├── src/
-│   │   ├── App.tsx                 # Router and auth provider setup
-│   │   ├── api.ts                  # Axios client with JWT interceptor
-│   │   ├── auth.tsx                # Auth context (login/logout/token storage)
-│   │   ├── types.ts                # TypeScript type definitions
-│   │   ├── components/Layout.tsx   # Sidebar navigation shell
-│   │   └── pages/                  # Dashboard, Query, Numbers, Bulk, Audit, Admin, Login
-│   ├── index.html
-│   ├── vite.config.ts              # Vite config with Tailwind plugin and API proxy
-│   └── package.json
-├── docker-compose.yml              # Local PostgreSQL for development
-├── Makefile                        # Dev, build, and per-environment targets
+│   │   ├── App.tsx                 # Router and auth provider
+│   │   ├── api.ts                  # Axios client (auth, dno, analytics, admin, analyzer, etc.)
+│   │   ├── auth.tsx                # Auth context (React 19 use() hook)
+│   │   ├── types.ts                # TypeScript types for all API shapes
+│   │   ├── components/Layout.tsx   # Sidebar navigation (10 items)
+│   │   └── pages/                  # Dashboard, Query, Numbers, Bulk, Analyzer,
+│   │                               # Compliance, Webhooks, ROI, Audit, Admin, Login
+│   ├── index.html / index.css      # Entry point + Tailwind + micro-transitions
+│   ├── vite.config.ts              # Vite + Tailwind plugin + API proxy to gateway
+│   └── eslint.config.js            # Type-aware + react-x + react-dom rules
+├── Dockerfile                      # Multi-stage build with per-service targets
+├── docker-compose.yml              # Full microservices stack with PostgreSQL
+├── Makefile
 ├── go.mod / go.sum
 └── .gitignore
 ```
@@ -588,37 +506,33 @@ Returns `"status": "degraded"` with error details if the DB is unreachable.
 
 | Command | Description |
 |---------|-------------|
-| `make dev` | Start backend + frontend (no seed) |
-| `make dev-seed` | Start backend + frontend (seed mock data on first run) |
-| `make server` | Backend only |
+| `make dev` | Start all 4 microservices + frontend |
+| `make dev-seed` | Seed database then start everything |
+| `make seed` | Seed database only |
 | `make client` | Frontend only |
 | `make install` | Install frontend npm dependencies |
 
-### Per-Environment
+### Individual Services
 
 | Command | Description |
 |---------|-------------|
-| `make run-local` | Local with SQLite |
-| `make run-local-seed` | Local with SQLite + seed |
-| `make run-local-pg` | Local with PostgreSQL (requires `make pg-up` first) |
-| `make run-local-pg-seed` | Local with PostgreSQL + seed |
-| `make run-dev` | Dev environment |
-| `make run-testing` | Testing environment |
-| `make run-staging` | Staging (requires `DATABASE_URL` + `JWT_SECRET`) |
-| `make run-pre-prod` | Pre-prod (requires `DATABASE_URL` + `JWT_SECRET`) |
-| `make run-production` | Production (requires `DATABASE_URL` + `JWT_SECRET`, seed blocked) |
+| `make svc-gateway` | Gateway on :8080 |
+| `make svc-query` | Query service on :8081 |
+| `make svc-portal` | Portal service on :8082 |
+| `make svc-worker` | Worker service (background) |
 
 ### Docker
 
 | Command | Description |
 |---------|-------------|
-| `make pg-up` | Start local PostgreSQL container |
-| `make pg-down` | Stop and remove containers |
+| `docker compose up --build` | Full stack (all services + PostgreSQL) |
+| `make pg-up` | PostgreSQL container only |
+| `make pg-down` | Stop containers |
 
 ### Build & Test
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build Go binary + frontend production bundle |
+| `make build` | Build all 4 Go binaries + frontend production bundle |
 | `make test` | Run Go tests |
 | `make clean` | Remove build artifacts and database files |
