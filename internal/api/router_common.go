@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -31,6 +32,7 @@ func corsMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	})
 }
 
+// healthHandler returns liveness status -- "am I alive?"
 func healthHandler(database *db.DB, cfg *config.Config, serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := "ok"
@@ -44,6 +46,26 @@ func healthHandler(database *db.DB, cfg *config.Config, serviceName string) http
 			"env":     string(cfg.Env),
 			"service": serviceName,
 			"db":      dbStatus,
+		})
+	}
+}
+
+// readyHandler returns readiness status -- "am I ready to serve traffic?"
+// Returns 503 if the DB is unreachable so load balancers stop sending traffic.
+func readyHandler(database *db.DB, serviceName string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := database.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+				"ready":   false,
+				"service": serviceName,
+				"error":   err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ready":   true,
+			"service": serviceName,
 		})
 	}
 }
@@ -62,6 +84,29 @@ func slogMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 				"duration_ms", time.Since(start).Milliseconds(),
 				"request_id", chimw.GetReqID(r.Context()),
 			)
+		})
+	}
+}
+
+// bodyLimitMiddleware restricts request body size.
+func bodyLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// timeoutMiddleware adds a per-request context deadline.
+func timeoutMiddleware(d time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), d)
+			defer cancel()
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

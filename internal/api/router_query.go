@@ -39,8 +39,12 @@ func NewQueryRouter(
 	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
 	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService, nil)
 
+	// 1MB body limit for query endpoints
+	r.Use(bodyLimitMiddleware(1 << 20))
+
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/health", healthHandler(database, cfg, "query-service"))
+	r.Get("/ready", readyHandler(database, "query-service"))
 
 	r.Group(func(r chi.Router) {
 		r.Use(APIKeyMiddleware(apiKeyService, authService))

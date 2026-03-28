@@ -40,8 +40,12 @@ func NewPortalRouter(
 	dnoService.SetWebhookFirer(featuresService)
 	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService, featuresService)
 
+	// 10MB body limit (bulk uploads need more)
+	r.Use(bodyLimitMiddleware(10 << 20))
+
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/health", healthHandler(database, cfg, "portal-service"))
+	r.Get("/ready", readyHandler(database, "portal-service"))
 
 	// Login (rate limited)
 	r.Group(func(r chi.Router) {
@@ -61,7 +65,7 @@ func NewPortalRouter(
 		r.Get("/api/dno/numbers", h.ListNumbers)
 		r.Post("/api/dno/bulk-upload", h.BulkUpload)
 		r.Get("/api/dno/bulk-job", h.GetBulkJobStatus)
-		r.Get("/api/dno/export", h.ExportCSV)
+		r.With(timeoutMiddleware(60*time.Second)).Get("/api/dno/export", h.ExportCSV)
 		r.Get("/api/dno/validate-ownership", h.ValidateOwnership)
 
 		// Analytics & audit
@@ -71,7 +75,7 @@ func NewPortalRouter(
 		// Features
 		r.Get("/api/compliance-report", h.ComplianceReport)
 		r.Get("/api/roi-calculator", h.CalculateROI)
-		r.Post("/api/analyzer", h.AnalyzeTraffic)
+		r.With(timeoutMiddleware(30*time.Second)).Post("/api/analyzer", h.AnalyzeTraffic)
 
 		// Webhooks
 		r.Post("/api/webhooks", h.CreateWebhook)
