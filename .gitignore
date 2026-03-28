@@ -1,0 +1,8 @@
+bin/
+realnumber*.db
+realnumber*.db-wal
+realnumber*.db-shm
+client/node_modules/
+client/dist/
+.env
+*.exe
