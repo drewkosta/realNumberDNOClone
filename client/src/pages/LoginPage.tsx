@@ -29,7 +29,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden relative">
-      {/* Subtle background glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
 
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative animate-scale-in">
@@ -90,9 +89,15 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <p className="mt-6 text-center text-xs text-gray-400 animate-fade-in stagger-6">
-          Default credentials: admin@realnumber.local / admin123
-        </p>
+        <div className="mt-6 animate-fade-in stagger-6">
+          <p className="text-xs text-gray-400 text-center mb-2">Demo accounts (seeded in local dev):</p>
+          <div className="text-[11px] text-gray-400 space-y-0.5 font-mono">
+            <p><span className="text-purple-500">admin</span> admin@realnumber.local / admin123</p>
+            <p><span className="text-blue-500">org_admin</span> jsmith@acmetelecom.com / password123</p>
+            <p><span className="text-green-500">operator</span> alee@securegate.com / password123</p>
+            <p><span className="text-gray-500">viewer</span> viewer@realnumber.local / password123</p>
+          </div>
+        </div>
       </div>
     </div>
   );

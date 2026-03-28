@@ -113,21 +113,20 @@ This starts:
 
 The frontend proxies API calls through Vite to the gateway on `:8080`.
 
-### Default Login
+### Demo Accounts
 
-| Email | Password |
-|-------|----------|
-| `admin@realnumber.local` | `admin123` |
+The seed creates accounts for every role so you can test each access level:
 
-Seed data also creates 10 additional users with password `password123`:
+| Role | Email | Password | Organization |
+|------|-------|----------|--------------|
+| **admin** | `admin@realnumber.local` | `admin123` | System Admin (platform operator) |
+| **org_admin** | `jsmith@acmetelecom.com` | `password123` | Acme Telecom (carrier) |
+| **org_admin** | `tgarcia@pacificbell.com` | `password123` | Pacific Bell Services (resp org) |
+| **operator** | `alee@securegate.com` | `password123` | SecureGate Systems (gateway provider) |
+| **operator** | `operator@realnumber.local` | `password123` | System Admin |
+| **viewer** | `viewer@realnumber.local` | `password123` | System Admin (read-only) |
 
-| Email | Role | Organization |
-|-------|------|--------------|
-| `jsmith@acmetelecom.com` | org_admin | Acme Telecom |
-| `alee@securegate.com` | operator | SecureGate Systems |
-| `tgarcia@pacificbell.com` | org_admin | Pacific Bell Services |
-| `viewer@realnumber.local` | viewer | System Admin |
-| `operator@realnumber.local` | operator | System Admin |
+These are also displayed on the login page in local dev.
 
 ### Test API Keys (seeded)
 
