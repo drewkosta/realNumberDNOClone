@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 import type {
   LoginResponse,
   User,
@@ -23,13 +23,13 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
+  (err: unknown) => {
+    if (isAxiosError(err) && err.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
-    return Promise.reject(err);
+    return Promise.reject(err instanceof Error ? err : new Error(String(err)));
   }
 );
 
@@ -50,7 +50,7 @@ export const dnoApi = {
     api.post<DNONumber>('/dno/numbers', data).then((r) => r.data),
 
   removeNumber: (phoneNumber: string, channel = 'voice') =>
-    api.delete('/dno/numbers', { params: { phoneNumber, channel } }).then((r) => r.data),
+    api.delete<{ message: string }>('/dno/numbers', { params: { phoneNumber, channel } }).then((r) => r.data),
 
   listNumbers: (params: {
     page?: number;
@@ -70,7 +70,7 @@ export const dnoApi = {
   },
 
   exportCSV: () =>
-    api.get('/dno/export', { responseType: 'blob' }).then((r) => {
+    api.get<Blob>('/dno/export', { responseType: 'blob' }).then((r) => {
       const url = window.URL.createObjectURL(new Blob([r.data]));
       const a = document.createElement('a');
       a.href = url;

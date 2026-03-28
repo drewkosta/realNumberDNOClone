@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import axios from 'axios';
 import { dnoApi } from '../api';
 import type { BulkUploadResult } from '../types';
 import { Upload, FileText, Download, CheckCircle, AlertCircle } from 'lucide-react';
@@ -21,8 +22,8 @@ export default function BulkPage() {
     try {
       const res = await dnoApi.bulkUpload(file, channel, numberType);
       setResult(res);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Upload failed');
+    } catch (err: unknown) {
+      setError(axios.isAxiosError(err) ? (err.response?.data as { error?: string })?.error ?? 'Upload failed' : 'Upload failed');
     } finally {
       setLoading(false);
     }
@@ -46,7 +47,7 @@ export default function BulkPage() {
             have phone numbers in the first column and an optional reason in the second column.
           </p>
 
-          <form onSubmit={handleUpload} className="space-y-4">
+          <form onSubmit={(e) => void handleUpload(e)} className="space-y-4">
             <div
               className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-400 transition-colors"
               onClick={() => fileRef.current?.click()}
@@ -73,7 +74,7 @@ export default function BulkPage() {
                 type="file"
                 accept=".csv"
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
             </div>
 
@@ -137,8 +138,8 @@ export default function BulkPage() {
               </div>
               {result.details && result.details.length > 0 && (
                 <div className="bg-red-50 rounded-lg p-3 max-h-40 overflow-auto">
-                  {result.details.map((d, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-red-700 mb-1">
+                  {result.details.map((d) => (
+                    <div key={d} className="flex items-start gap-2 text-xs text-red-700 mb-1">
                       <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
                       {d}
                     </div>
@@ -161,7 +162,7 @@ export default function BulkPage() {
           <p className="text-sm text-gray-500 mb-6">
             Download the complete DNO database as a CSV flat file. The export includes all active
             numbers with their dataset, channel, and last update date. This is compatible with the
-            RealNumber DNO flat file format used by carriers and gateway providers for batch
+            FakeNumber DNO flat file format used by carriers and gateway providers for batch
             processing.
           </p>
 
@@ -179,7 +180,7 @@ export default function BulkPage() {
           </div>
 
           <button
-            onClick={() => dnoApi.exportCSV()}
+            onClick={() => void dnoApi.exportCSV()}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-900"
           >
             <Download className="w-4 h-4" />

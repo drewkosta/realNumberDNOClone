@@ -19,7 +19,7 @@ export default function LoginPage() {
     try {
       const resp = await authApi.login(email, password);
       login(resp.token, resp.user);
-      navigate('/');
+      void navigate('/');
     } catch {
       setError('Invalid email or password');
     } finally {
@@ -34,11 +34,11 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
             <Phone className="w-8 h-8 text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">RealNumber DNO</h1>
+          <h1 className="text-2xl font-bold text-gray-900">FakeNumber DNO</h1>
           <p className="text-gray-500 mt-1">Do Not Originate Management Portal</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           {error && (
             <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
           )}

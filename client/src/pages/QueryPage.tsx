@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import { dnoApi } from '../api';
 import type { DNOQueryResponse, BulkQueryResponse } from '../types';
 import { Search, Phone, CheckCircle, XCircle } from 'lucide-react';
@@ -21,8 +22,8 @@ export default function QueryPage() {
     try {
       const result = await dnoApi.query(phone, channel);
       setSingleResult(result);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Query failed');
+    } catch (err: unknown) {
+      setError(axios.isAxiosError(err) ? (err.response?.data as { error?: string })?.error ?? 'Query failed' : 'Query failed');
     } finally {
       setLoading(false);
     }
@@ -40,8 +41,8 @@ export default function QueryPage() {
         .filter(Boolean);
       const result = await dnoApi.bulkQuery(numbers, channel);
       setBulkResult(result);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Bulk query failed');
+    } catch (err: unknown) {
+      setError(axios.isAxiosError(err) ? (err.response?.data as { error?: string })?.error ?? 'Bulk query failed' : 'Bulk query failed');
     } finally {
       setLoading(false);
     }
@@ -78,7 +79,7 @@ export default function QueryPage() {
 
       {mode === 'single' ? (
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
-          <form onSubmit={handleSingleQuery} className="flex gap-4 items-end">
+          <form onSubmit={(e) => void handleSingleQuery(e)} className="flex gap-4 items-end">
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
               <div className="relative">
@@ -116,7 +117,7 @@ export default function QueryPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
-          <form onSubmit={handleBulkQuery} className="space-y-4">
+          <form onSubmit={(e) => void handleBulkQuery(e)} className="space-y-4">
             <div className="flex gap-4 items-end">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -231,8 +232,8 @@ export default function QueryPage() {
                 </tr>
               </thead>
               <tbody>
-                {bulkResult.results.map((r, i) => (
-                  <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                {bulkResult.results.map((r) => (
+                  <tr key={r.phoneNumber} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-4 py-3 font-mono">{r.phoneNumber}</td>
                     <td className="px-4 py-3">
                       <span
@@ -243,7 +244,7 @@ export default function QueryPage() {
                         {r.isDno ? 'DNO' : 'Clear'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{r.dataset || '-'}</td>
+                    <td className="px-4 py-3 text-gray-600">{r.dataset ?? '-'}</td>
                     <td className="px-4 py-3 text-gray-600">{r.channel}</td>
                   </tr>
                 ))}

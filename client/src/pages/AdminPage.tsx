@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import { adminApi } from '../api';
 import { useAuth } from '../auth';
 import { Shield, UserPlus, CheckCircle } from 'lucide-react';
@@ -41,8 +42,8 @@ export default function AdminPage() {
       setPassword('');
       setFirstName('');
       setLastName('');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create user');
+    } catch (err: unknown) {
+      setError(axios.isAxiosError(err) ? (err.response?.data as { error?: string })?.error ?? 'Failed to create user' : 'Failed to create user');
     } finally {
       setLoading(false);
     }
@@ -63,7 +64,7 @@ export default function AdminPage() {
             <h2 className="text-lg font-semibold text-gray-900">Create User</h2>
           </div>
 
-          <form onSubmit={handleCreateUser} className="space-y-4">
+          <form onSubmit={(e) => void handleCreateUser(e)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
@@ -150,7 +151,7 @@ export default function AdminPage() {
           <div className="space-y-4">
             <div className="flex justify-between py-3 border-b border-gray-100">
               <span className="text-sm text-gray-500">System</span>
-              <span className="text-sm font-medium text-gray-900">RealNumber DNO Clone</span>
+              <span className="text-sm font-medium text-gray-900">FakeNumber DNO Clone</span>
             </div>
             <div className="flex justify-between py-3 border-b border-gray-100">
               <span className="text-sm text-gray-500">Backend</span>

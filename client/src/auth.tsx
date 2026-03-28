@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, use, useState, useCallback, type ReactNode } from 'react';
 import type { User } from './types';
 
 interface AuthContextType {
@@ -15,7 +15,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   const [user, setUser] = useState<User | null>(() => {
     const stored = localStorage.getItem('user');
-    return stored ? JSON.parse(stored) : null;
+    return stored ? (JSON.parse(stored) as User) : null;
   });
 
   const login = useCallback((token: string, user: User) => {
@@ -33,12 +33,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token }}>
+    <AuthContext value={{ user, token, login, logout, isAuthenticated: !!token }}>
       {children}
-    </AuthContext.Provider>
+    </AuthContext>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
-  return useContext(AuthContext);
+  return use(AuthContext);
 }

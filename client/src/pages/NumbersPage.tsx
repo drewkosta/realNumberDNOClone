@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { dnoApi } from '../api';
 import { Plus, Trash2, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -33,7 +34,7 @@ export default function NumbersPage() {
         reason: newReason,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dno-numbers'] });
+      void queryClient.invalidateQueries({ queryKey: ['dno-numbers'] });
       setShowAdd(false);
       setNewPhone('');
       setNewReason('');
@@ -42,7 +43,7 @@ export default function NumbersPage() {
 
   const removeMutation = useMutation({
     mutationFn: ({ phone, ch }: { phone: string; ch: string }) => dnoApi.removeNumber(phone, ch),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dno-numbers'] }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['dno-numbers'] }),
   });
 
   return (
@@ -54,7 +55,7 @@ export default function NumbersPage() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => dnoApi.exportCSV()}
+            onClick={() => void dnoApi.exportCSV()}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <Download className="w-4 h-4" />
@@ -142,7 +143,7 @@ export default function NumbersPage() {
               </button>
               {addMutation.isError && (
                 <span className="text-red-600 text-sm self-center">
-                  {(addMutation.error as any)?.response?.data?.error || 'Failed to add number'}
+                  {axios.isAxiosError(addMutation.error) ? (addMutation.error.response?.data as { error?: string })?.error ?? 'Failed to add number' : 'Failed to add number'}
                 </span>
               )}
             </div>
@@ -264,7 +265,7 @@ export default function NumbersPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">
-                        {n.reason || '-'}
+                        {n.reason ?? '-'}
                       </td>
                       <td className="px-4 py-3 text-gray-500">
                         {new Date(n.updatedAt).toLocaleDateString()}

@@ -26,7 +26,7 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    void navigate('/login');
   };
 
   return (
@@ -37,7 +37,7 @@ export default function Layout() {
           <div className="flex items-center gap-3">
             <Phone className="w-8 h-8 text-blue-400" />
             <div>
-              <h1 className="text-lg font-bold">RealNumber</h1>
+              <h1 className="text-lg font-bold">FakeNumber</h1>
               <p className="text-xs text-slate-400">Do Not Originate</p>
             </div>
           </div>

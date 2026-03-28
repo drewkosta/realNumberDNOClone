@@ -51,16 +51,16 @@ export default function AuditPage() {
                     <td className="px-4 py-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          actionColors[entry.action] || 'bg-gray-100 text-gray-600'
+                          actionColors[entry.action] ?? 'bg-gray-100 text-gray-600'
                         }`}
                       >
                         {entry.action}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{entry.entityType}</td>
-                    <td className="px-4 py-3 text-gray-600">{entry.userId || '-'}</td>
+                    <td className="px-4 py-3 text-gray-600">{entry.userId ?? '-'}</td>
                     <td className="px-4 py-3 text-gray-500 max-w-[400px] truncate">
-                      {entry.details || '-'}
+                      {entry.details ?? '-'}
                     </td>
                   </tr>
                 ))}

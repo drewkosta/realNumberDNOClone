@@ -46,7 +46,7 @@ export default function DashboardPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 mt-1">RealNumber DNO Analytics Overview</p>
+        <p className="text-gray-500 mt-1">FakeNumber DNO Analytics Overview</p>
       </div>
 
       {/* Stats cards */}
@@ -106,7 +106,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="hour"
-                  tickFormatter={(v) => v.split(' ')[1] || v}
+                  tickFormatter={(v: string) => v.split(' ')[1] ?? v}
                   fontSize={12}
                 />
                 <YAxis fontSize={12} />
@@ -133,10 +133,10 @@ export default function DashboardPage() {
                   cy="50%"
                   outerRadius={100}
                   dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ''} ${((percent ?? 0) * 100).toFixed(0)}%`}
                 >
-                  {datasetData.map((_, index) => (
-                    <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                  {datasetData.map((entry, index) => (
+                    <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
