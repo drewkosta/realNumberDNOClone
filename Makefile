@@ -3,12 +3,10 @@
 
 # ── Local development (default) ──────────────────────────────────────────────
 
-# Run backend + frontend, no seed
 dev:
 	@echo "Starting local backend (:8080) and frontend (:5173)..."
 	@make -j2 server client
 
-# Run backend + frontend, seed mock data on first run
 dev-seed:
 	@echo "Starting local backend (:8080) with seed + frontend (:5173)..."
 	@make -j2 server-seed client
@@ -22,7 +20,7 @@ server-seed:
 client:
 	cd client && npm run dev
 
-# ── Per-environment server targets ───────────────────────────────────────────
+# ── Per-environment targets ──────────────────────────────────────────────────
 
 run-local:
 	go run ./cmd/server/ --env=local
@@ -42,6 +40,7 @@ run-testing:
 run-testing-seed:
 	go run ./cmd/server/ --env=testing --seed
 
+# Staging+ require DATABASE_URL and JWT_SECRET env vars
 run-staging:
 	go run ./cmd/server/ --env=staging
 
@@ -51,7 +50,24 @@ run-pre-prod:
 run-production:
 	go run ./cmd/server/ --env=production
 
-# ── Build & utilities ──────���─────────────────────────────────────────────────
+# ── Local PostgreSQL (via Docker) ────────────────────────────────────────────
+
+pg-up:
+	docker compose up -d postgres
+
+pg-down:
+	docker compose down
+
+# Run with local PostgreSQL instead of SQLite
+run-local-pg:
+	DB_DRIVER=postgres DATABASE_URL="postgres://realnumber:realnumber@localhost:5432/realnumber?sslmode=disable" \
+		go run ./cmd/server/ --env=local
+
+run-local-pg-seed:
+	DB_DRIVER=postgres DATABASE_URL="postgres://realnumber:realnumber@localhost:5432/realnumber?sslmode=disable" \
+		go run ./cmd/server/ --env=local --seed
+
+# ── Build & utilities ────────────────────────────────────────────────────────
 
 build:
 	go build -o bin/server ./cmd/server/
