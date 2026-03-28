@@ -6,6 +6,10 @@ import DashboardPage from './pages/DashboardPage';
 import QueryPage from './pages/QueryPage';
 import NumbersPage from './pages/NumbersPage';
 import BulkPage from './pages/BulkPage';
+import AnalyzerPage from './pages/AnalyzerPage';
+import CompliancePage from './pages/CompliancePage';
+import WebhooksPage from './pages/WebhooksPage';
+import ROIPage from './pages/ROIPage';
 import AuditPage from './pages/AuditPage';
 import AdminPage from './pages/AdminPage';
 
@@ -33,6 +37,10 @@ function AppRoutes() {
         <Route path="query" element={<QueryPage />} />
         <Route path="numbers" element={<NumbersPage />} />
         <Route path="bulk" element={<BulkPage />} />
+        <Route path="analyzer" element={<AnalyzerPage />} />
+        <Route path="compliance" element={<CompliancePage />} />
+        <Route path="webhooks" element={<WebhooksPage />} />
+        <Route path="roi" element={<ROIPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="admin" element={<AdminPage />} />
       </Route>

@@ -5,6 +5,10 @@ import {
   Search,
   List,
   Upload,
+  Scan,
+  ShieldCheck,
+  Webhook,
+  Calculator,
   ScrollText,
   Shield,
   LogOut,
@@ -16,6 +20,10 @@ const navItems = [
   { to: '/query', icon: Search, label: 'Query Numbers' },
   { to: '/numbers', icon: List, label: 'DNO List' },
   { to: '/bulk', icon: Upload, label: 'Bulk Operations' },
+  { to: '/analyzer', icon: Scan, label: 'DNO Analyzer' },
+  { to: '/compliance', icon: ShieldCheck, label: 'Compliance' },
+  { to: '/webhooks', icon: Webhook, label: 'Webhooks' },
+  { to: '/roi', icon: Calculator, label: 'ROI Calculator' },
   { to: '/audit', icon: ScrollText, label: 'Audit Log' },
   { to: '/admin', icon: Shield, label: 'Admin', adminOnly: true },
 ];
@@ -45,7 +53,7 @@ export default function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item, index) => {
             if (item.adminOnly && user?.role !== 'admin') return null;
             return (
@@ -54,15 +62,15 @@ export default function Layout() {
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  `nav-indicator flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 animate-fade-up ${
+                  `nav-indicator flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 animate-fade-up ${
                     isActive
                       ? 'active bg-blue-600/90 text-white shadow-lg shadow-blue-600/20'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white hover:pl-4'
                   }`
                 }
-                style={{ animationDelay: `${index * 0.05 + 0.1}s` }}
+                style={{ animationDelay: `${index * 0.04 + 0.1}s` }}
               >
-                <item.icon className="w-5 h-5 transition-transform duration-200" />
+                <item.icon className="w-4 h-4 transition-transform duration-200" />
                 {item.label}
               </NavLink>
             );

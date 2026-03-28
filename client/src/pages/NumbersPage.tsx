@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { dnoApi } from '../api';
-import { Plus, Trash2, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Download, Search, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react';
+import type { OwnershipValidation } from '../types';
 
 export default function NumbersPage() {
   const queryClient = useQueryClient();
@@ -18,6 +19,8 @@ export default function NumbersPage() {
   const [newType, setNewType] = useState('local');
   const [newChannel, setNewChannel] = useState('voice');
   const [newReason, setNewReason] = useState('');
+  const [ownershipCheck, setOwnershipCheck] = useState<OwnershipValidation | null>(null);
+  const [checkingOwnership, setCheckingOwnership] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['dno-numbers', page, search, dataset, channel, statusFilter],
@@ -87,11 +90,27 @@ export default function NumbersPage() {
               <input
                 type="text"
                 value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
+                onChange={(e) => { setNewPhone(e.target.value); setOwnershipCheck(null); }}
+                onBlur={() => {
+                  if (newPhone.replace(/\D/g, '').length >= 10) {
+                    setCheckingOwnership(true);
+                    void dnoApi.validateOwnership(newPhone).then((r) => {
+                      setOwnershipCheck(r);
+                      setCheckingOwnership(false);
+                    }).catch(() => setCheckingOwnership(false));
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
                 placeholder="5551234567"
                 required
               />
+              {checkingOwnership && <p className="text-xs text-gray-400 mt-1 animate-pulse">Validating ownership...</p>}
+              {ownershipCheck && !checkingOwnership && (
+                <div className={`flex items-center gap-1 mt-1 text-xs animate-fade-in ${ownershipCheck.valid ? 'text-green-600' : 'text-amber-600'}`}>
+                  {ownershipCheck.valid ? <CheckCircle className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                  {ownershipCheck.reason}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Number Type</label>

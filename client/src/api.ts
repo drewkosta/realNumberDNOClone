@@ -9,6 +9,11 @@ import type {
   AnalyticsSummary,
   AuditLogEntry,
   BulkUploadResult,
+  DNOAnalyzerReport,
+  ComplianceReport,
+  ROICalculation,
+  WebhookSubscription,
+  OwnershipValidation,
 } from './types';
 
 const api = axios.create({ baseURL: '/api' });
@@ -78,6 +83,9 @@ export const dnoApi = {
       a.click();
       window.URL.revokeObjectURL(url);
     }),
+
+  validateOwnership: (phoneNumber: string) =>
+    api.get<OwnershipValidation>('/dno/validate-ownership', { params: { phoneNumber } }).then((r) => r.data),
 };
 
 export const analyticsApi = {
@@ -98,4 +106,41 @@ export const adminApi = {
     role: string;
     orgId?: number;
   }) => api.post<User>('/admin/users', data).then((r) => r.data),
+
+  generateApiKey: (orgId: number) =>
+    api.post<{ orgId: number; apiKey: string; note: string }>('/admin/api-keys', null, { params: { orgId } }).then((r) => r.data),
+
+  revokeApiKey: (orgId: number) =>
+    api.delete<{ message: string }>('/admin/api-keys', { params: { orgId } }).then((r) => r.data),
+
+  ingestITG: (data: { phoneNumber: string; investigationId: string; threatCategory: string; channel?: string }) =>
+    api.post<DNONumber>('/admin/itg-ingest', data).then((r) => r.data),
+
+  npacEvent: (data: { phoneNumber: string; newStatus: string; newOwnerOrgId?: number }) =>
+    api.post<{ message: string }>('/admin/npac-event', data).then((r) => r.data),
+
+  tssSync: () =>
+    api.post<{ message: string; numbersAdded: number }>('/admin/tss-sync').then((r) => r.data),
+};
+
+export const analyzerApi = {
+  analyze: (records: { callerId: string; timestamp?: string }[], channel = 'voice') =>
+    api.post<DNOAnalyzerReport>('/analyzer', { records, channel }).then((r) => r.data),
+};
+
+export const complianceApi = {
+  getReport: () => api.get<ComplianceReport>('/compliance-report').then((r) => r.data),
+};
+
+export const roiApi = {
+  calculate: (dailyCallVolume: number) =>
+    api.get<ROICalculation>('/roi-calculator', { params: { dailyCallVolume } }).then((r) => r.data),
+};
+
+export const webhookApi = {
+  create: (data: { url: string; secret: string; events?: string }) =>
+    api.post<WebhookSubscription>('/webhooks', data).then((r) => r.data),
+  list: () => api.get<WebhookSubscription[]>('/webhooks').then((r) => r.data),
+  remove: (id: number) =>
+    api.delete<{ message: string }>('/webhooks', { params: { id } }).then((r) => r.data),
 };

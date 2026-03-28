@@ -25,6 +25,8 @@ export interface DNONumber {
   reason?: string;
   addedByOrgId?: number;
   addedByUserId?: number;
+  investigationId?: string;
+  threatCategory?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -82,4 +84,65 @@ export interface BulkUploadResult {
   success: number;
   errors: number;
   details: string[];
+}
+
+// ── New feature types ───────────────────────────────────────
+
+export interface DNOAnalyzerReport {
+  totalRecords: number;
+  dnoHits: number;
+  dnoMisses: number;
+  hitRate: number;
+  byDataset: Record<string, number>;
+  byThreatCategory: Record<string, number>;
+  topSpoofed: SpoofedNumber[];
+  estBlockedPerDay: number;
+}
+
+export interface SpoofedNumber {
+  phoneNumber: string;
+  dataset: string;
+  threatCategory?: string;
+  count: number;
+}
+
+export interface ComplianceReport {
+  generatedAt: string;
+  orgName?: string;
+  totalDnoNumbers: number;
+  datasetCoverage: Record<string, number>;
+  channelCoverage: Record<string, number>;
+  updateFrequency: string;
+  enforcementMethod: string;
+  last30DaysQueries: number;
+  last30DaysHitRate: number;
+  last30DaysBlocked: number;
+  complianceStatus: 'compliant' | 'at_risk' | 'non_compliant';
+  recommendations: string[];
+}
+
+export interface ROICalculation {
+  dailyCallVolume: number;
+  estHitRate: number;
+  estDailyBlocked: number;
+  estMonthlyBlocked: number;
+  estAnnualBlocked: number;
+  avgComplaintCost: number;
+  estAnnualSavings: number;
+  complianceRiskLevel: string;
+}
+
+export interface WebhookSubscription {
+  id: number;
+  orgId: number;
+  url: string;
+  events: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface OwnershipValidation {
+  phoneNumber: string;
+  valid: boolean;
+  reason: string;
 }
