@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"realNumberDNOClone/internal/cache"
+	"realNumberDNOClone/internal/metrics"
 	"realNumberDNOClone/internal/models"
 	"realNumberDNOClone/internal/querylog"
 )
@@ -62,20 +63,27 @@ func (s *DNOService) QueryNumber(ctx context.Context, phoneNumber, channel strin
 		return nil, err
 	}
 
+	start := time.Now()
+	defer func() {
+		metrics.DNOQueryDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	// Check cache first
 	cacheKey := dnoCacheKey(phone, channel)
 	if s.dnoCache != nil {
 		if cached, ok := s.dnoCache.Get(cacheKey); ok {
-			// Still log the query asynchronously
+			metrics.CacheHits.WithLabelValues("dno").Inc()
 			if orgID != nil {
 				result := "miss"
 				if cached.IsDNO {
 					result = "hit"
 				}
+				metrics.DNOQueryTotal.WithLabelValues(channel, result).Inc()
 				s.qlWriter.Log(querylog.Entry{OrgID: *orgID, PhoneNumber: phone, Result: result, Channel: channel})
 			}
 			return cached, nil
 		}
+		metrics.CacheMisses.WithLabelValues("dno").Inc()
 	}
 
 	var dno models.DNONumber
@@ -86,11 +94,12 @@ func (s *DNOService) QueryNumber(ctx context.Context, phoneNumber, channel strin
 		phone, channel,
 	).Scan(&dno.ID, &dno.PhoneNumber, &dno.Dataset, &dno.Channel, &dno.Status, &dno.UpdatedAt)
 
-	// Log query asynchronously
+	// Log query asynchronously + metrics
 	result := "miss"
 	if err == nil {
 		result = "hit"
 	}
+	metrics.DNOQueryTotal.WithLabelValues(channel, result).Inc()
 	if orgID != nil {
 		s.qlWriter.Log(querylog.Entry{OrgID: *orgID, PhoneNumber: phone, Result: result, Channel: channel})
 	}
@@ -128,6 +137,7 @@ func (s *DNOService) BulkQuery(ctx context.Context, phoneNumbers []string, chann
 	if len(phoneNumbers) > 1000 {
 		return nil, fmt.Errorf("bulk query limited to 1000 numbers per request")
 	}
+	metrics.BulkQuerySize.Observe(float64(len(phoneNumbers)))
 	if channel == "" {
 		channel = "voice"
 	}
@@ -493,8 +503,10 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 	}
 	if s.analyticsCache != nil {
 		if cached, ok := s.analyticsCache.Get(cacheKey); ok {
+			metrics.CacheHits.WithLabelValues("analytics").Inc()
 			return cached, nil
 		}
+		metrics.CacheMisses.WithLabelValues("analytics").Inc()
 	}
 
 	summary := &models.AnalyticsSummary{

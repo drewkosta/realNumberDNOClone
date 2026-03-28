@@ -11,9 +11,11 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"realNumberDNOClone/internal/cache"
 	"realNumberDNOClone/internal/config"
+	"realNumberDNOClone/internal/metrics"
 	"realNumberDNOClone/internal/models"
 	"realNumberDNOClone/internal/querylog"
 	"realNumberDNOClone/internal/service"
@@ -32,6 +34,7 @@ func NewRouter(
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
+	r.Use(metrics.Middleware)
 	r.Use(slogMiddleware(logger))
 
 	allowedOrigins := []string{"http://localhost:5173", "http://localhost:3000"}
@@ -54,6 +57,9 @@ func NewRouter(
 	authService := service.NewAuthService(db, cfg.JWTSecret)
 	dnoService := service.NewDNOService(db, qlWriter, dnoCache, analyticsCache)
 	h := NewHandlers(db, dnoService, authService)
+
+	// Prometheus metrics
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Health check with DB ping
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
