@@ -8,15 +8,30 @@ import (
 	"strings"
 	"time"
 
+	"realNumberDNOClone/internal/cache"
 	"realNumberDNOClone/internal/models"
+	"realNumberDNOClone/internal/querylog"
 )
 
 type DNOService struct {
-	db *sql.DB
+	db             *sql.DB
+	qlWriter       *querylog.AsyncWriter
+	dnoCache       *cache.TTLCache[*models.DNOQueryResponse]
+	analyticsCache *cache.TTLCache[*models.AnalyticsSummary]
 }
 
-func NewDNOService(db *sql.DB) *DNOService {
-	return &DNOService{db: db}
+func NewDNOService(
+	db *sql.DB,
+	qlWriter *querylog.AsyncWriter,
+	dnoCache *cache.TTLCache[*models.DNOQueryResponse],
+	analyticsCache *cache.TTLCache[*models.AnalyticsSummary],
+) *DNOService {
+	return &DNOService{
+		db:             db,
+		qlWriter:       qlWriter,
+		dnoCache:       dnoCache,
+		analyticsCache: analyticsCache,
+	}
 }
 
 var phoneRegex = regexp.MustCompile(`^\d{10}$`)
@@ -31,6 +46,10 @@ func normalizePhone(phone string) string {
 	return phone
 }
 
+func dnoCacheKey(phone, channel string) string {
+	return phone + ":" + channel
+}
+
 func (s *DNOService) QueryNumber(ctx context.Context, phoneNumber, channel string, orgID *int64) (*models.DNOQueryResponse, error) {
 	phone := normalizePhone(phoneNumber)
 	if !phoneRegex.MatchString(phone) {
@@ -43,6 +62,22 @@ func (s *DNOService) QueryNumber(ctx context.Context, phoneNumber, channel strin
 		return nil, err
 	}
 
+	// Check cache first
+	cacheKey := dnoCacheKey(phone, channel)
+	if s.dnoCache != nil {
+		if cached, ok := s.dnoCache.Get(cacheKey); ok {
+			// Still log the query asynchronously
+			if orgID != nil {
+				result := "miss"
+				if cached.IsDNO {
+					result = "hit"
+				}
+				s.qlWriter.Log(querylog.Entry{OrgID: *orgID, PhoneNumber: phone, Result: result, Channel: channel})
+			}
+			return cached, nil
+		}
+	}
+
 	var dno models.DNONumber
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, phone_number, dataset, channel, status, updated_at FROM dno_numbers
@@ -51,34 +86,42 @@ func (s *DNOService) QueryNumber(ctx context.Context, phoneNumber, channel strin
 		phone, channel,
 	).Scan(&dno.ID, &dno.PhoneNumber, &dno.Dataset, &dno.Channel, &dno.Status, &dno.UpdatedAt)
 
+	// Log query asynchronously
 	result := "miss"
 	if err == nil {
 		result = "hit"
 	}
 	if orgID != nil {
-		_, _ = s.db.ExecContext(ctx, `INSERT INTO query_log (org_id, phone_number, result, channel) VALUES (?, ?, ?, ?)`,
-			*orgID, phone, result, channel)
+		s.qlWriter.Log(querylog.Entry{OrgID: *orgID, PhoneNumber: phone, Result: result, Channel: channel})
 	}
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return &models.DNOQueryResponse{
+			resp := &models.DNOQueryResponse{
 				PhoneNumber: phone,
 				IsDNO:       false,
 				Channel:     channel,
-			}, nil
+			}
+			if s.dnoCache != nil {
+				s.dnoCache.Set(cacheKey, resp)
+			}
+			return resp, nil
 		}
 		return nil, err
 	}
 
-	return &models.DNOQueryResponse{
+	resp := &models.DNOQueryResponse{
 		PhoneNumber: phone,
 		IsDNO:       true,
 		Dataset:     dno.Dataset,
 		Channel:     dno.Channel,
 		Status:      dno.Status,
 		LastUpdated: &dno.UpdatedAt,
-	}, nil
+	}
+	if s.dnoCache != nil {
+		s.dnoCache.Set(cacheKey, resp)
+	}
+	return resp, nil
 }
 
 func (s *DNOService) BulkQuery(ctx context.Context, phoneNumbers []string, channel string, orgID *int64) (*models.BulkQueryResponse, error) {
@@ -92,23 +135,62 @@ func (s *DNOService) BulkQuery(ctx context.Context, phoneNumbers []string, chann
 		return nil, err
 	}
 
-	// Normalize all phone numbers and build lookup batch
-	normalized := make([]string, 0, len(phoneNumbers))
-	normalMap := make(map[string]string, len(phoneNumbers)) // normalized -> original
+	// Normalize and split into cached vs uncached
+	type phoneEntry struct {
+		original   string
+		normalized string
+	}
+	var toQuery []phoneEntry
+	results := make([]models.DNOQueryResponse, 0, len(phoneNumbers))
+	hits := 0
+
+	// Check cache for each number
+	uncachedNormalized := make([]string, 0)
+	uncachedMap := make(map[string]bool)
+
 	for _, p := range phoneNumbers {
 		n := normalizePhone(p)
-		if phoneRegex.MatchString(n) {
-			normalized = append(normalized, n)
-			normalMap[n] = p
+		if !phoneRegex.MatchString(n) {
+			results = append(results, models.DNOQueryResponse{
+				PhoneNumber: p,
+				IsDNO:       false,
+				Channel:     channel,
+				Status:      "error",
+			})
+			continue
+		}
+
+		cacheKey := dnoCacheKey(n, channel)
+		if s.dnoCache != nil {
+			if cached, ok := s.dnoCache.Get(cacheKey); ok {
+				results = append(results, *cached)
+				if cached.IsDNO {
+					hits++
+				}
+				if orgID != nil {
+					result := "miss"
+					if cached.IsDNO {
+						result = "hit"
+					}
+					s.qlWriter.Log(querylog.Entry{OrgID: *orgID, PhoneNumber: n, Result: result, Channel: channel})
+				}
+				continue
+			}
+		}
+
+		toQuery = append(toQuery, phoneEntry{original: p, normalized: n})
+		if !uncachedMap[n] {
+			uncachedNormalized = append(uncachedNormalized, n)
+			uncachedMap[n] = true
 		}
 	}
 
-	// Batch lookup: query all numbers at once
+	// Batch lookup uncached numbers
 	dnoHits := make(map[string]models.DNONumber)
-	if len(normalized) > 0 {
-		placeholders := make([]string, len(normalized))
-		args := make([]interface{}, 0, len(normalized)+1)
-		for i, n := range normalized {
+	if len(uncachedNormalized) > 0 {
+		placeholders := make([]string, len(uncachedNormalized))
+		args := make([]interface{}, 0, len(uncachedNormalized)+1)
+		for i, n := range uncachedNormalized {
 			placeholders[i] = "?"
 			args = append(args, n)
 		}
@@ -137,62 +219,39 @@ func (s *DNOService) BulkQuery(ctx context.Context, phoneNumbers []string, chann
 		}
 	}
 
-	// Build results and batch-insert query logs
-	results := make([]models.DNOQueryResponse, 0, len(phoneNumbers))
-	hits := 0
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("starting query log tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	logStmt, err := tx.PrepareContext(ctx,
-		`INSERT INTO query_log (org_id, phone_number, result, channel) VALUES (?, ?, ?, ?)`)
-	if err != nil {
-		return nil, fmt.Errorf("preparing query log stmt: %w", err)
-	}
-	defer logStmt.Close()
-
-	for _, p := range phoneNumbers {
-		n := normalizePhone(p)
-		if !phoneRegex.MatchString(n) {
-			results = append(results, models.DNOQueryResponse{
-				PhoneNumber: p,
-				IsDNO:       false,
-				Channel:     channel,
-				Status:      "error",
-			})
-			continue
-		}
-
-		if hit, ok := dnoHits[n]; ok {
-			results = append(results, models.DNOQueryResponse{
-				PhoneNumber: n,
+	// Build results for uncached numbers
+	for _, pe := range toQuery {
+		if hit, ok := dnoHits[pe.normalized]; ok {
+			resp := models.DNOQueryResponse{
+				PhoneNumber: pe.normalized,
 				IsDNO:       true,
 				Dataset:     hit.Dataset,
 				Channel:     hit.Channel,
 				Status:      hit.Status,
 				LastUpdated: &hit.UpdatedAt,
-			})
+			}
+			results = append(results, resp)
 			hits++
+			if s.dnoCache != nil {
+				s.dnoCache.Set(dnoCacheKey(pe.normalized, channel), &resp)
+			}
 			if orgID != nil {
-				logStmt.ExecContext(ctx, *orgID, n, "hit", channel)
+				s.qlWriter.Log(querylog.Entry{OrgID: *orgID, PhoneNumber: pe.normalized, Result: "hit", Channel: channel})
 			}
 		} else {
-			results = append(results, models.DNOQueryResponse{
-				PhoneNumber: n,
+			resp := models.DNOQueryResponse{
+				PhoneNumber: pe.normalized,
 				IsDNO:       false,
 				Channel:     channel,
-			})
+			}
+			results = append(results, resp)
+			if s.dnoCache != nil {
+				s.dnoCache.Set(dnoCacheKey(pe.normalized, channel), &resp)
+			}
 			if orgID != nil {
-				logStmt.ExecContext(ctx, *orgID, n, "miss", channel)
+				s.qlWriter.Log(querylog.Entry{OrgID: *orgID, PhoneNumber: pe.normalized, Result: "miss", Channel: channel})
 			}
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("committing query logs: %w", err)
 	}
 
 	return &models.BulkQueryResponse{
@@ -232,7 +291,7 @@ func (s *DNOService) AddNumber(ctx context.Context, req models.AddDNORequest, or
 		return nil, fmt.Errorf("adding DNO number: %w", err)
 	}
 
-	// Query back the actual ID (handles both insert and upsert-update)
+	// Query back the actual ID
 	var id int64
 	err = s.db.QueryRowContext(ctx,
 		`SELECT id FROM dno_numbers WHERE phone_number = ? AND channel = ?`, phone, req.Channel,
@@ -243,6 +302,16 @@ func (s *DNOService) AddNumber(ctx context.Context, req models.AddDNORequest, or
 
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_log (user_id, org_id, action, entity_type, entity_id, details)
 		VALUES (?, ?, 'add', 'dno_number', ?, ?)`, userID, orgID, id, fmt.Sprintf("Added %s to subscriber DNO list", phone))
+
+	// Invalidate cache for this number
+	if s.dnoCache != nil {
+		s.dnoCache.DeletePrefix(phone + ":")
+	}
+	// Invalidate analytics cache
+	if s.analyticsCache != nil {
+		s.analyticsCache.Delete("all")
+		s.analyticsCache.DeletePrefix("org:")
+	}
 
 	return &models.DNONumber{
 		ID:          id,
@@ -284,6 +353,15 @@ func (s *DNOService) RemoveNumber(ctx context.Context, phoneNumber, channel stri
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_log (user_id, org_id, action, entity_type, details)
 		VALUES (?, ?, 'remove', 'dno_number', ?)`, userID, orgID, fmt.Sprintf("Removed %s from subscriber DNO list", phone))
 
+	// Invalidate caches
+	if s.dnoCache != nil {
+		s.dnoCache.DeletePrefix(phone + ":")
+	}
+	if s.analyticsCache != nil {
+		s.analyticsCache.Delete("all")
+		s.analyticsCache.DeletePrefix("org:")
+	}
+
 	return nil
 }
 
@@ -295,7 +373,6 @@ func (s *DNOService) ListNumbers(ctx context.Context, orgID *int64, dataset, sta
 		pageSize = 25
 	}
 
-	// Validate filter values if provided
 	if dataset != "" {
 		if err := models.ValidateDataset(dataset); err != nil {
 			return nil, err
@@ -409,13 +486,23 @@ func (s *DNOService) StreamNumbers(ctx context.Context, fn func(models.DNONumber
 }
 
 func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.AnalyticsSummary, error) {
+	// Check analytics cache
+	cacheKey := "all"
+	if orgID != nil {
+		cacheKey = fmt.Sprintf("org:%d", *orgID)
+	}
+	if s.analyticsCache != nil {
+		if cached, ok := s.analyticsCache.Get(cacheKey); ok {
+			return cached, nil
+		}
+	}
+
 	summary := &models.AnalyticsSummary{
 		ByDataset:    make(map[string]int),
 		ByChannel:    make(map[string]int),
 		ByNumberType: make(map[string]int),
 	}
 
-	// Build org filter for DNO queries
 	dnoWhere := "WHERE status = 'active'"
 	queryWhere := "WHERE queried_at >= ?"
 	auditWhere := "WHERE created_at >= ?"
@@ -431,13 +518,11 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		auditExtraArgs = append(auditExtraArgs, *orgID)
 	}
 
-	// Total active numbers
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dno_numbers "+dnoWhere, dnoArgs...).Scan(&summary.TotalDNONumbers); err != nil {
 		return nil, fmt.Errorf("counting active numbers: %w", err)
 	}
 	summary.ActiveNumbers = summary.TotalDNONumbers
 
-	// By dataset
 	rows, err := s.db.QueryContext(ctx, "SELECT dataset, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY dataset", dnoArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying by dataset: %w", err)
@@ -456,7 +541,6 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		return nil, fmt.Errorf("iterating dataset rows: %w", err)
 	}
 
-	// By channel
 	rows, err = s.db.QueryContext(ctx, "SELECT channel, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY channel", dnoArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying by channel: %w", err)
@@ -475,7 +559,6 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		return nil, fmt.Errorf("iterating channel rows: %w", err)
 	}
 
-	// By number type
 	rows, err = s.db.QueryContext(ctx, "SELECT number_type, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY number_type", dnoArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying by number type: %w", err)
@@ -494,7 +577,6 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		return nil, fmt.Errorf("iterating number type rows: %w", err)
 	}
 
-	// Query stats last 24h
 	since := time.Now().Add(-24 * time.Hour).Format("2006-01-02 15:04:05")
 	queryArgs := append([]interface{}{since}, queryExtraArgs...)
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM query_log "+queryWhere, queryArgs...).Scan(&summary.TotalQueries24h); err != nil {
@@ -510,7 +592,6 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		summary.HitRate24h = float64(hits) / float64(summary.TotalQueries24h) * 100
 	}
 
-	// Queries by hour (last 24h)
 	hourArgs := append([]interface{}{since}, queryExtraArgs...)
 	rows, err = s.db.QueryContext(ctx,
 		`SELECT strftime('%Y-%m-%d %H:00', queried_at) as hour, COUNT(*)
@@ -531,7 +612,6 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		return nil, fmt.Errorf("iterating hourly rows: %w", err)
 	}
 
-	// Recent additions/removals (last 7 days)
 	week := time.Now().Add(-7 * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	addArgs := append([]interface{}{week}, auditExtraArgs...)
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'add'", addArgs...).Scan(&summary.RecentAdditions); err != nil {
@@ -540,6 +620,11 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 	removeArgs := append([]interface{}{week}, auditExtraArgs...)
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'remove'", removeArgs...).Scan(&summary.RecentRemovals); err != nil {
 		return nil, fmt.Errorf("counting recent removals: %w", err)
+	}
+
+	// Cache the result
+	if s.analyticsCache != nil {
+		s.analyticsCache.Set(cacheKey, summary)
 	}
 
 	return summary, nil
