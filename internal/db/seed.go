@@ -1,7 +1,9 @@
 package db
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"math/rand"
@@ -74,6 +76,24 @@ func seedOrganizations(db *sql.DB) error {
 		}
 	}
 	log.Println("[seed]   8 organizations created")
+
+	// Seed known API keys for local testing (Acme Telecom = org 2, SecureGate = org 4)
+	testKeys := []struct {
+		orgID int64
+		key   string
+	}{
+		{2, "dno_test_acme_carrier_key_12345"},
+		{4, "dno_test_securegate_gw_key_67890"},
+	}
+	for _, tk := range testKeys {
+		h := sha256.Sum256([]byte(tk.key))
+		hashed := hex.EncodeToString(h[:])
+		db.Exec(`UPDATE organizations SET api_key = ? WHERE id = ?`, hashed, tk.orgID)
+	}
+	log.Println("[seed]   2 test API keys generated")
+	log.Println("[seed]     Acme Telecom:     dno_test_acme_carrier_key_12345")
+	log.Println("[seed]     SecureGate Systems: dno_test_securegate_gw_key_67890")
+
 	return nil
 }
 

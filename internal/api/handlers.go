@@ -16,13 +16,14 @@ import (
 )
 
 type Handlers struct {
-	db          *sql.DB
-	dnoService  *service.DNOService
-	authService *service.AuthService
+	db            *sql.DB
+	dnoService    *service.DNOService
+	authService   *service.AuthService
+	apiKeyService *service.APIKeyService
 }
 
-func NewHandlers(db *sql.DB, dnoService *service.DNOService, authService *service.AuthService) *Handlers {
-	return &Handlers{db: db, dnoService: dnoService, authService: authService}
+func NewHandlers(db *sql.DB, dnoService *service.DNOService, authService *service.AuthService, apiKeyService *service.APIKeyService) *Handlers {
+	return &Handlers{db: db, dnoService: dnoService, authService: authService, apiKeyService: apiKeyService}
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -79,6 +80,53 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, user)
+}
+
+// API Key management (admin only)
+
+func (h *Handlers) GenerateAPIKey(w http.ResponseWriter, r *http.Request) {
+	orgIDStr := r.URL.Query().Get("orgId")
+	if orgIDStr == "" {
+		writeError(w, http.StatusBadRequest, "orgId query parameter required")
+		return
+	}
+	orgID, err := strconv.ParseInt(orgIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid orgId")
+		return
+	}
+
+	key, err := h.apiKeyService.GenerateKey(r.Context(), orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"orgId":  orgID,
+		"apiKey": key,
+		"note":   "Store this key securely. It cannot be retrieved again.",
+	})
+}
+
+func (h *Handlers) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	orgIDStr := r.URL.Query().Get("orgId")
+	if orgIDStr == "" {
+		writeError(w, http.StatusBadRequest, "orgId query parameter required")
+		return
+	}
+	orgID, err := strconv.ParseInt(orgIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid orgId")
+		return
+	}
+
+	if err := h.apiKeyService.RevokeKey(r.Context(), orgID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "API key revoked"})
 }
 
 // DNO Query handlers

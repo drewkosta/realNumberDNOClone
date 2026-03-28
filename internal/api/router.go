@@ -55,8 +55,9 @@ func NewRouter(
 	}))
 
 	authService := service.NewAuthService(database, cfg.JWTSecret)
+	apiKeyService := service.NewAPIKeyService(database)
 	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
-	h := NewHandlers(database.Writer, dnoService, authService)
+	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService)
 
 	// Prometheus metrics
 	r.Handle("/metrics", promhttp.Handler())
@@ -82,17 +83,15 @@ func NewRouter(
 		r.Post("/api/auth/login", h.Login)
 	})
 
-	// Protected routes
+	// ── External API: query endpoints accessible via API key OR JWT ──
 	r.Group(func(r chi.Router) {
-		r.Use(AuthMiddleware(authService))
+		r.Use(APIKeyMiddleware(apiKeyService, authService))
 
-		// Rate limit API endpoints if configured
 		if cfg.RateLimitRPS > 0 {
 			r.Use(httprate.Limit(
 				cfg.RateLimitRPS,
 				time.Second,
 				httprate.WithKeyFuncs(func(r *http.Request) (string, error) {
-					// Rate limit by org ID from JWT context
 					if orgID, ok := r.Context().Value(OrgIDKey).(int64); ok {
 						return fmt.Sprintf("org:%d", orgID), nil
 					}
@@ -101,10 +100,15 @@ func NewRouter(
 			))
 		}
 
-		r.Get("/api/auth/me", h.GetMe)
-
 		r.Get("/api/dno/query", h.QueryNumber)
 		r.Post("/api/dno/query/bulk", h.BulkQuery)
+	})
+
+	// ── Portal API: JWT-only endpoints for management and admin ──
+	r.Group(func(r chi.Router) {
+		r.Use(AuthMiddleware(authService))
+
+		r.Get("/api/auth/me", h.GetMe)
 
 		r.Post("/api/dno/numbers", h.AddNumber)
 		r.Delete("/api/dno/numbers", h.RemoveNumber)
@@ -117,9 +121,12 @@ func NewRouter(
 		r.Get("/api/analytics", h.GetAnalytics)
 		r.Get("/api/audit-log", h.GetAuditLog)
 
+		// Admin routes
 		r.Group(func(r chi.Router) {
 			r.Use(AdminOnly)
 			r.Post("/api/admin/users", h.CreateUser)
+			r.Post("/api/admin/api-keys", h.GenerateAPIKey)
+			r.Delete("/api/admin/api-keys", h.RevokeAPIKey)
 		})
 	})
 
