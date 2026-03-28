@@ -37,7 +37,7 @@ func NewQueryRouter(
 	authService := service.NewAuthService(database, cfg.JWTSecret)
 	apiKeyService := service.NewAPIKeyService(database)
 	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
-	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService)
+	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService, nil)
 
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/health", healthHandler(database, cfg, "query-service"))

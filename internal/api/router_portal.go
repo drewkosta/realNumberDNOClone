@@ -38,8 +38,7 @@ func NewPortalRouter(
 	dnoService := service.NewDNOService(database, qlWriter, dnoCache, analyticsCache)
 	featuresService := service.NewFeaturesService(database, logger)
 	dnoService.SetWebhookFirer(featuresService)
-	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService)
-	fh := NewFeaturesHandlers(featuresService)
+	h := NewHandlers(database.Writer, dnoService, authService, apiKeyService, featuresService)
 
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/health", healthHandler(database, cfg, "portal-service"))
@@ -63,21 +62,21 @@ func NewPortalRouter(
 		r.Post("/api/dno/bulk-upload", h.BulkUpload)
 		r.Get("/api/dno/bulk-job", h.GetBulkJobStatus)
 		r.Get("/api/dno/export", h.ExportCSV)
-		r.Get("/api/dno/validate-ownership", fh.ValidateOwnership)
+		r.Get("/api/dno/validate-ownership", h.ValidateOwnership)
 
 		// Analytics & audit
 		r.Get("/api/analytics", h.GetAnalytics)
 		r.Get("/api/audit-log", h.GetAuditLog)
 
 		// Features
-		r.Get("/api/compliance-report", fh.ComplianceReport)
-		r.Get("/api/roi-calculator", fh.CalculateROI)
-		r.Post("/api/analyzer", fh.AnalyzeTraffic)
+		r.Get("/api/compliance-report", h.ComplianceReport)
+		r.Get("/api/roi-calculator", h.CalculateROI)
+		r.Post("/api/analyzer", h.AnalyzeTraffic)
 
 		// Webhooks
-		r.Post("/api/webhooks", fh.CreateWebhook)
-		r.Get("/api/webhooks", fh.ListWebhooks)
-		r.Delete("/api/webhooks", fh.DeleteWebhook)
+		r.Post("/api/webhooks", h.CreateWebhook)
+		r.Get("/api/webhooks", h.ListWebhooks)
+		r.Delete("/api/webhooks", h.DeleteWebhook)
 
 		// Admin
 		r.Group(func(r chi.Router) {
@@ -85,9 +84,9 @@ func NewPortalRouter(
 			r.Post("/api/admin/users", h.CreateUser)
 			r.Post("/api/admin/api-keys", h.GenerateAPIKey)
 			r.Delete("/api/admin/api-keys", h.RevokeAPIKey)
-			r.Post("/api/admin/itg-ingest", fh.IngestITGNumber)
-			r.Post("/api/admin/npac-event", fh.NPACPortingEvent)
-			r.Post("/api/admin/tss-sync", fh.TSSRegistrySync)
+			r.Post("/api/admin/itg-ingest", h.IngestITGNumber)
+			r.Post("/api/admin/npac-event", h.NPACPortingEvent)
+			r.Post("/api/admin/tss-sync", h.TSSRegistrySync)
 		})
 	})
 
