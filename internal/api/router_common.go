@@ -26,7 +26,7 @@ func corsMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key"},
-		ExposedHeaders:   []string{"Content-Disposition"},
+		ExposedHeaders:   []string{"Content-Disposition", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"},
 		AllowCredentials: cfg.CORSOrigin != "*",
 		MaxAge:           300,
 	})
