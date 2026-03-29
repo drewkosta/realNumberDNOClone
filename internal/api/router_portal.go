@@ -50,49 +50,49 @@ func NewPortalRouter(
 	// Login + refresh (rate limited)
 	r.Group(func(r chi.Router) {
 		r.Use(httprate.LimitByIP(5, time.Minute))
-		r.Post("/api/auth/login", h.Login)
-		r.Post("/api/auth/refresh", h.RefreshToken)
+		r.Post("/api/v1/auth/login", h.Login)
+		r.Post("/api/v1/auth/refresh", h.RefreshToken)
 	})
 
 	// JWT-protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(AuthMiddleware(authService))
 
-		r.Get("/api/auth/me", h.GetMe)
+		r.Get("/api/v1/auth/me", h.GetMe)
 
 		// DNO management
-		r.Post("/api/dno/numbers", h.AddNumber)
-		r.Delete("/api/dno/numbers", h.RemoveNumber)
-		r.Get("/api/dno/numbers", h.ListNumbers)
-		r.Post("/api/dno/bulk-upload", h.BulkUpload)
-		r.Get("/api/dno/bulk-job", h.GetBulkJobStatus)
-		r.With(timeoutMiddleware(60*time.Second)).Get("/api/dno/export", h.ExportCSV)
-		r.Get("/api/dno/validate-ownership", h.ValidateOwnership)
+		r.Post("/api/v1/dno/numbers", h.AddNumber)
+		r.Delete("/api/v1/dno/numbers", h.RemoveNumber)
+		r.Get("/api/v1/dno/numbers", h.ListNumbers)
+		r.Post("/api/v1/dno/bulk-upload", h.BulkUpload)
+		r.Get("/api/v1/dno/bulk-job", h.GetBulkJobStatus)
+		r.With(timeoutMiddleware(60*time.Second)).Get("/api/v1/dno/export", h.ExportCSV)
+		r.Get("/api/v1/dno/validate-ownership", h.ValidateOwnership)
 
 		// Analytics & audit
-		r.Get("/api/analytics", h.GetAnalytics)
-		r.Get("/api/audit-log", h.GetAuditLog)
+		r.Get("/api/v1/analytics", h.GetAnalytics)
+		r.Get("/api/v1/audit-log", h.GetAuditLog)
 
 		// Features
-		r.Get("/api/compliance-report", h.ComplianceReport)
-		r.Get("/api/roi-calculator", h.CalculateROI)
-		r.With(timeoutMiddleware(30*time.Second)).Post("/api/analyzer", h.AnalyzeTraffic)
+		r.Get("/api/v1/compliance-report", h.ComplianceReport)
+		r.Get("/api/v1/roi-calculator", h.CalculateROI)
+		r.With(timeoutMiddleware(30*time.Second)).Post("/api/v1/analyzer", h.AnalyzeTraffic)
 
 		// Webhooks
-		r.Post("/api/webhooks", h.CreateWebhook)
-		r.Get("/api/webhooks", h.ListWebhooks)
-		r.Delete("/api/webhooks", h.DeleteWebhook)
+		r.Post("/api/v1/webhooks", h.CreateWebhook)
+		r.Get("/api/v1/webhooks", h.ListWebhooks)
+		r.Delete("/api/v1/webhooks", h.DeleteWebhook)
 
 		// Admin
 		r.Group(func(r chi.Router) {
 			r.Use(AdminOnly)
-			r.Post("/api/admin/users", h.CreateUser)
-			r.Post("/api/admin/reset-password", h.ResetPassword)
-			r.Post("/api/admin/api-keys", h.GenerateAPIKey)
-			r.Delete("/api/admin/api-keys", h.RevokeAPIKey)
-			r.Post("/api/admin/itg-ingest", h.IngestITGNumber)
-			r.Post("/api/admin/npac-event", h.NPACPortingEvent)
-			r.Post("/api/admin/tss-sync", h.TSSRegistrySync)
+			r.Post("/api/v1/admin/users", h.CreateUser)
+			r.Post("/api/v1/admin/reset-password", h.ResetPassword)
+			r.Post("/api/v1/admin/api-keys", h.GenerateAPIKey)
+			r.Delete("/api/v1/admin/api-keys", h.RevokeAPIKey)
+			r.Post("/api/v1/admin/itg-ingest", h.IngestITGNumber)
+			r.Post("/api/v1/admin/npac-event", h.NPACPortingEvent)
+			r.Post("/api/v1/admin/tss-sync", h.TSSRegistrySync)
 		})
 	})
 

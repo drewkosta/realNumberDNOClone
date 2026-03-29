@@ -67,11 +67,11 @@ func main() {
 	})
 
 	// Route query endpoints to query-service
-	r.Get("/api/dno/query", queryProxy.ServeHTTP)
-	r.Post("/api/dno/query/bulk", queryProxy.ServeHTTP)
+	r.Get("/api/v1/dno/query", queryProxy.ServeHTTP)
+	r.Post("/api/v1/dno/query/bulk", queryProxy.ServeHTTP)
 
 	// Route all other API calls to portal-service
-	r.HandleFunc("/api/*", portalProxy.ServeHTTP)
+	r.HandleFunc("/api/v1/*", portalProxy.ServeHTTP)
 
 	// Serve static frontend files in production
 	if staticDir != "" {

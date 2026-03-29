@@ -60,8 +60,8 @@ func NewQueryRouter(
 			))
 		}
 
-		r.Get("/api/dno/query", h.QueryNumber)
-		r.Post("/api/dno/query/bulk", h.BulkQuery)
+		r.Get("/api/v1/dno/query", h.QueryNumber)
+		r.Post("/api/v1/dno/query/bulk", h.BulkQuery)
 	})
 
 	return r

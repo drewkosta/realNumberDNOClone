@@ -16,7 +16,7 @@ import type {
   OwnershipValidation,
 } from './types';
 
-const api = axios.create({ baseURL: '/api' });
+const api = axios.create({ baseURL: '/api/v1' });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -36,7 +36,7 @@ api.interceptors.response.use(
       if (refreshToken) {
         isRefreshing = true;
         try {
-          const resp = await axios.post<LoginResponse>('/api/auth/refresh', { refreshToken });
+          const resp = await axios.post<LoginResponse>('/api/v1/auth/refresh', { refreshToken });
           localStorage.setItem('token', resp.data.token);
           localStorage.setItem('refreshToken', resp.data.refreshToken);
           localStorage.setItem('user', JSON.stringify(resp.data.user));
