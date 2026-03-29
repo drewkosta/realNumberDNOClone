@@ -1,0 +1,1271 @@
+basePath: /api/v1
+definitions:
+  realNumberDNOClone_internal_models.AddDNORequest:
+    properties:
+      channel:
+        type: string
+      numberType:
+        type: string
+      phoneNumber:
+        type: string
+      reason:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.AnalyticsSummary:
+    properties:
+      activeNumbers:
+        type: integer
+      byChannel:
+        additionalProperties:
+          type: integer
+        type: object
+      byDataset:
+        additionalProperties:
+          type: integer
+        type: object
+      byNumberType:
+        additionalProperties:
+          type: integer
+        type: object
+      hitRate24h:
+        type: number
+      queriesByHour:
+        items:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.HourlyCount'
+        type: array
+      recentAdditions:
+        type: integer
+      recentRemovals:
+        type: integer
+      totalDnoNumbers:
+        type: integer
+      totalQueries24h:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.AuditLog:
+    properties:
+      action:
+        type: string
+      createdAt:
+        type: string
+      details:
+        type: string
+      entityId:
+        type: integer
+      entityType:
+        type: string
+      id:
+        type: integer
+      orgId:
+        type: integer
+      userId:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.AuditLogPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.AuditLog'
+        type: array
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      total:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.BulkJob:
+    properties:
+      completedAt:
+        type: string
+      createdAt:
+        type: string
+      errorCount:
+        type: integer
+      fileName:
+        type: string
+      id:
+        type: integer
+      jobType:
+        type: string
+      orgId:
+        type: integer
+      processedRecords:
+        type: integer
+      resultSummary:
+        type: string
+      status:
+        type: string
+      successCount:
+        type: integer
+      totalRecords:
+        type: integer
+      userId:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.BulkQueryRequest:
+    properties:
+      channel:
+        type: string
+      phoneNumbers:
+        items:
+          type: string
+        type: array
+    type: object
+  realNumberDNOClone_internal_models.BulkQueryResponse:
+    properties:
+      hits:
+        type: integer
+      misses:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.DNOQueryResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.CDRRecord:
+    properties:
+      callerId:
+        type: string
+      timestamp:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.ComplianceReport:
+    properties:
+      channelCoverage:
+        additionalProperties:
+          type: integer
+        type: object
+      complianceStatus:
+        type: string
+      datasetCoverage:
+        additionalProperties:
+          type: integer
+        type: object
+      enforcementMethod:
+        type: string
+      generatedAt:
+        type: string
+      last30DaysBlocked:
+        type: integer
+      last30DaysHitRate:
+        type: number
+      last30DaysQueries:
+        type: integer
+      orgName:
+        type: string
+      recommendations:
+        items:
+          type: string
+        type: array
+      totalDnoNumbers:
+        type: integer
+      updateFrequency:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.CreateUserRequest:
+    properties:
+      email:
+        type: string
+      firstName:
+        type: string
+      lastName:
+        type: string
+      orgId:
+        type: integer
+      password:
+        type: string
+      role:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.DNOAnalyzerReport:
+    properties:
+      byDataset:
+        additionalProperties:
+          type: integer
+        type: object
+      byThreatCategory:
+        additionalProperties:
+          type: integer
+        type: object
+      dnoHits:
+        type: integer
+      dnoMisses:
+        type: integer
+      estBlockedPerDay:
+        type: integer
+      hitRate:
+        type: number
+      topSpoofed:
+        items:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.SpoofedNumber'
+        type: array
+      totalRecords:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.DNOAnalyzerRequest:
+    properties:
+      channel:
+        type: string
+      records:
+        items:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.CDRRecord'
+        type: array
+    type: object
+  realNumberDNOClone_internal_models.DNONumber:
+    properties:
+      addedByOrgId:
+        type: integer
+      addedByUserId:
+        type: integer
+      channel:
+        type: string
+      createdAt:
+        type: string
+      dataset:
+        type: string
+      id:
+        type: integer
+      investigationId:
+        type: string
+      numberType:
+        type: string
+      phoneNumber:
+        type: string
+      reason:
+        type: string
+      status:
+        type: string
+      threatCategory:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.DNONumberPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.DNONumber'
+        type: array
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      total:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.DNOQueryResponse:
+    properties:
+      channel:
+        type: string
+      dataset:
+        type: string
+      isDno:
+        type: boolean
+      lastUpdated:
+        type: string
+      phoneNumber:
+        type: string
+      status:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.HourlyCount:
+    properties:
+      count:
+        type: integer
+      hour:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.ITGIngestRequest:
+    properties:
+      channel:
+        type: string
+      investigationId:
+        type: string
+      phoneNumber:
+        type: string
+      threatCategory:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.LoginResponse:
+    properties:
+      refreshToken:
+        type: string
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/realNumberDNOClone_internal_models.User'
+    type: object
+  realNumberDNOClone_internal_models.OwnershipValidation:
+    properties:
+      phoneNumber:
+        type: string
+      reason:
+        type: string
+      valid:
+        type: boolean
+    type: object
+  realNumberDNOClone_internal_models.ROICalculation:
+    properties:
+      avgComplaintCost:
+        type: number
+      complianceRiskLevel:
+        type: string
+      dailyCallVolume:
+        type: integer
+      estAnnualBlocked:
+        type: integer
+      estAnnualSavings:
+        type: number
+      estDailyBlocked:
+        type: integer
+      estHitRate:
+        type: number
+      estMonthlyBlocked:
+        type: integer
+    type: object
+  realNumberDNOClone_internal_models.SpoofedNumber:
+    properties:
+      count:
+        type: integer
+      dataset:
+        type: string
+      phoneNumber:
+        type: string
+      threatCategory:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.User:
+    properties:
+      active:
+        type: boolean
+      createdAt:
+        type: string
+      email:
+        type: string
+      firstName:
+        type: string
+      id:
+        type: integer
+      lastName:
+        type: string
+      orgId:
+        type: integer
+      role:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  realNumberDNOClone_internal_models.WebhookSubscription:
+    properties:
+      active:
+        type: boolean
+      createdAt:
+        type: string
+      events:
+        type: string
+      id:
+        type: integer
+      orgId:
+        type: integer
+      secret:
+        type: string
+      url:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: FakeNumber DNO
+    url: https://github.com/drewkosta/realNumberDNOClone
+  description: |-
+    Do Not Originate database API for preventing illegal robocalls and caller ID spoofing.
+    Carriers query the DNO database in real-time to block spoofed calls.
+  title: FakeNumber DNO API
+  version: "1.0"
+paths:
+  /admin/api-keys:
+    delete:
+      description: Revoke an organization's API key
+      parameters:
+      - description: Organization ID
+        in: query
+        name: orgId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke API key
+      tags:
+      - Admin
+    post:
+      description: Generate a new API key for an organization
+      parameters:
+      - description: Organization ID
+        in: query
+        name: orgId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            properties:
+              apiKey:
+                type: string
+              note:
+                type: string
+              orgId:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate API key
+      tags:
+      - Admin
+  /admin/itg-ingest:
+    post:
+      consumes:
+      - application/json
+      description: Ingest a phone number from an ITG traceback investigation
+      parameters:
+      - description: ITG ingest details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.ITGIngestRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.DNONumber'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ingest ITG number
+      tags:
+      - Admin
+  /admin/npac-event:
+    post:
+      consumes:
+      - application/json
+      description: Process a mock NPAC number porting event
+      parameters:
+      - description: Porting event details
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            newOwnerOrgId:
+              type: integer
+            newStatus:
+              type: string
+            phoneNumber:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: NPAC porting event
+      tags:
+      - Admin
+  /admin/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Admin resets another user's password
+      parameters:
+      - description: User ID and new password
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            newPassword:
+              type: string
+            userId:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reset user password
+      tags:
+      - Admin
+  /admin/tss-sync:
+    post:
+      description: Trigger a mock TSS registry synchronization
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+              numbersAdded:
+                type: integer
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: TSS registry sync
+      tags:
+      - Admin
+  /admin/users:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user account (admin only)
+      parameters:
+      - description: User details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.User'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a user
+      tags:
+      - Admin
+  /analytics:
+    get:
+      description: Retrieve DNO analytics summary
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.AnalyticsSummary'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get analytics
+      tags:
+      - Analytics
+  /analyzer:
+    post:
+      consumes:
+      - application/json
+      description: Analyze call traffic records against the DNO list
+      parameters:
+      - description: Traffic records to analyze
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.DNOAnalyzerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.DNOAnalyzerReport'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Analyze traffic
+      tags:
+      - Analyzer
+  /audit-log:
+    get:
+      description: Retrieve a paginated audit log of DNO operations
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.AuditLogPage'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get audit log
+      tags:
+      - Analytics
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate with email and password, returns JWT access and refresh
+        tokens
+      parameters:
+      - description: Login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.LoginResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Login
+      tags:
+      - Auth
+  /auth/me:
+    get:
+      description: Returns the authenticated user's profile information
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.User'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - Auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange a refresh token for a new access token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            refreshToken:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.LoginResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Refresh token
+      tags:
+      - Auth
+  /compliance-report:
+    get:
+      description: Generate a compliance report for the current organization
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.ComplianceReport'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate compliance report
+      tags:
+      - Compliance
+  /dno/bulk-job:
+    get:
+      description: Retrieve the status of a bulk upload job
+      parameters:
+      - description: Bulk job ID
+        in: query
+        name: jobId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.BulkJob'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get bulk job status
+      tags:
+      - Bulk Operations
+  /dno/bulk-upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a CSV file of phone numbers for bulk addition to the DNO
+        list
+      parameters:
+      - description: CSV file of phone numbers
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Channel (defaults to voice)
+        in: formData
+        name: channel
+        type: string
+      - description: Number type (defaults to local)
+        in: formData
+        name: numberType
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            properties:
+              jobId:
+                type: integer
+              message:
+                type: string
+              status:
+                type: string
+              totalRecords:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk upload DNO numbers
+      tags:
+      - Bulk Operations
+  /dno/export:
+    get:
+      description: Download all DNO numbers as a CSV file
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: Export DNO numbers as CSV
+      tags:
+      - Bulk Operations
+  /dno/numbers:
+    delete:
+      description: Remove a phone number from the Do-Not-Originate list
+      parameters:
+      - description: Phone number to remove
+        in: query
+        name: phoneNumber
+        required: true
+        type: string
+      - description: Channel (defaults to voice)
+        in: query
+        name: channel
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a DNO number
+      tags:
+      - DNO Management
+    get:
+      description: Retrieve a paginated list of DNO numbers with optional filters
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      - description: Filter by dataset
+        in: query
+        name: dataset
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by channel
+        in: query
+        name: channel
+        type: string
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.DNONumberPage'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List DNO numbers
+      tags:
+      - DNO Management
+    post:
+      consumes:
+      - application/json
+      description: Register a phone number on the Do-Not-Originate list
+      parameters:
+      - description: Number to add
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.AddDNORequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.DNONumber'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add a DNO number
+      tags:
+      - DNO Management
+  /dno/query:
+    get:
+      consumes:
+      - application/json
+      description: Check if a phone number is on the Do Not Originate list
+      parameters:
+      - description: 10-digit phone number
+        example: "5551234567"
+        in: query
+        name: phoneNumber
+        required: true
+        type: string
+      - default: voice
+        description: voice or text
+        in: query
+        name: channel
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.DNOQueryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - APIKeyAuth: []
+        BearerAuth: []
+      summary: Single DNO lookup
+      tags:
+      - Query
+  /dno/query/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Check up to 1000 phone numbers against the DNO list in a single
+        request
+      parameters:
+      - description: Phone numbers and channel
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/realNumberDNOClone_internal_models.BulkQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.BulkQueryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - APIKeyAuth: []
+        BearerAuth: []
+      summary: Bulk DNO lookup
+      tags:
+      - Query
+  /dno/validate-ownership:
+    get:
+      description: Check whether the current organization owns a given phone number
+      parameters:
+      - description: Phone number to validate
+        in: query
+        name: phoneNumber
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.OwnershipValidation'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Validate number ownership
+      tags:
+      - DNO Management
+  /roi-calculator:
+    get:
+      description: Calculate return on investment based on daily call volume
+      parameters:
+      - description: Daily call volume
+        in: query
+        name: dailyCallVolume
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.ROICalculation'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Calculate ROI
+      tags:
+      - Tools
+  /webhooks:
+    delete:
+      description: Remove a webhook subscription
+      parameters:
+      - description: Webhook ID
+        in: query
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete webhook
+      tags:
+      - Webhooks
+    get:
+      description: Retrieve all webhook subscriptions for the current organization
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/realNumberDNOClone_internal_models.WebhookSubscription'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List webhooks
+      tags:
+      - Webhooks
+    post:
+      consumes:
+      - application/json
+      description: Register a new webhook subscription
+      parameters:
+      - description: Webhook details
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            events:
+              type: string
+            secret:
+              type: string
+            url:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/realNumberDNOClone_internal_models.WebhookSubscription'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create webhook
+      tags:
+      - Webhooks
+securityDefinitions:
+  APIKeyAuth:
+    description: Organization API key for machine-to-machine access
+    in: header
+    name: X-API-Key
+    type: apiKey
+  BearerAuth:
+    description: JWT Bearer token (prefix with "Bearer ")
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -15,6 +15,40 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres-replica:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: realnumber
+      POSTGRES_PASSWORD: realnumber
+      POSTGRES_DB: realnumber
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U realnumber"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:1.23.1-p2
+    environment:
+      DATABASE_URL: postgres://realnumber:realnumber@postgres:5432/realnumber
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      SERVER_IDLE_TIMEOUT: 300
+      SERVER_LIFETIME: 3600
+      LOG_CONNECTIONS: 0
+      LOG_DISCONNECTIONS: 0
+      AUTH_TYPE: plain
+    ports:
+      - "6432:5432"
+    depends_on:
+      postgres: { condition: service_healthy }
+
   gateway:
     build: { context: ., dockerfile: Dockerfile, target: gateway }
     ports:
@@ -23,6 +57,7 @@ services:
       GATEWAY_PORT: "8080"
       QUERY_SERVICE_URL: http://query-service:8081
       PORTAL_SERVICE_URL: http://portal-service:8082
+      STATIC_DIR: ""
     depends_on:
       - query-service
       - portal-service
@@ -34,10 +69,10 @@ services:
     environment:
       QUERY_PORT: "8081"
       DB_DRIVER: postgres
-      DATABASE_URL: postgres://realnumber:realnumber@postgres:5432/realnumber?sslmode=disable
+      DATABASE_URL: postgres://realnumber:realnumber@pgbouncer:5432/realnumber?sslmode=disable
       JWT_SECRET: docker-dev-secret
     depends_on:
-      postgres: { condition: service_healthy }
+      pgbouncer: { condition: service_started }
 
   portal-service:
     build: { context: ., dockerfile: Dockerfile, target: portal-service }
@@ -46,19 +81,20 @@ services:
     environment:
       PORTAL_PORT: "8082"
       DB_DRIVER: postgres
-      DATABASE_URL: postgres://realnumber:realnumber@postgres:5432/realnumber?sslmode=disable
+      DATABASE_URL: postgres://realnumber:realnumber@pgbouncer:5432/realnumber?sslmode=disable
+      DATABASE_REPLICA_URL: postgres://realnumber:realnumber@postgres-replica:5432/realnumber?sslmode=disable
       JWT_SECRET: docker-dev-secret
       CORS_ORIGIN: "*"
     depends_on:
-      postgres: { condition: service_healthy }
+      pgbouncer: { condition: service_started }
 
   worker-service:
     build: { context: ., dockerfile: Dockerfile, target: worker-service }
     environment:
       DB_DRIVER: postgres
-      DATABASE_URL: postgres://realnumber:realnumber@postgres:5432/realnumber?sslmode=disable
+      DATABASE_URL: postgres://realnumber:realnumber@pgbouncer:5432/realnumber?sslmode=disable
     depends_on:
-      postgres: { condition: service_healthy }
+      pgbouncer: { condition: service_started }
 
 volumes:
   pgdata:

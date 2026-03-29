@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	appdb "realNumberDNOClone/internal/db"
 	"realNumberDNOClone/internal/models"
 )
 
@@ -17,15 +18,17 @@ type AddNumberFunc func(ctx context.Context, req models.AddDNORequest, orgID, us
 
 type Worker struct {
 	db       *sql.DB
+	appDB    *appdb.DB
 	addFn    AddNumberFunc
 	logger   *slog.Logger
 	done     chan struct{}
 	interval time.Duration
 }
 
-func NewWorker(db *sql.DB, addFn AddNumberFunc, logger *slog.Logger) *Worker {
+func NewWorker(database *appdb.DB, addFn AddNumberFunc, logger *slog.Logger) *Worker {
 	return &Worker{
-		db:       db,
+		db:       database.Writer,
+		appDB:    database,
 		addFn:    addFn,
 		logger:   logger,
 		done:     make(chan struct{}),
@@ -42,17 +45,28 @@ func (w *Worker) Stop() {
 }
 
 func (w *Worker) loop() {
-	ticker := time.NewTicker(w.interval)
-	defer ticker.Stop()
+	jobTicker := time.NewTicker(w.interval)
+	retryTicker := time.NewTicker(30 * time.Second)
+	cleanupTicker := time.NewTicker(1 * time.Hour)
+	defer jobTicker.Stop()
+	defer retryTicker.Stop()
+	defer cleanupTicker.Stop()
 	for {
 		select {
-		case <-ticker.C:
+		case <-jobTicker.C:
 			w.processPending()
+		case <-retryTicker.C:
+			w.retryFailed()
+		case <-cleanupTicker.C:
+			w.cleanupQueryLog()
+			w.ensurePartitions()
 		case <-w.done:
 			return
 		}
 	}
 }
+
+const maxRetries = 3
 
 type bulkJobPayload struct {
 	Records    []bulkRecord `json:"records"`
@@ -162,5 +176,48 @@ func EnqueueBulkAdd(ctx context.Context, db *sql.DB, orgID, userID int64, record
 	return id, nil
 }
 
+// ensurePartitions creates upcoming monthly query_log partitions (PostgreSQL only).
+func (w *Worker) ensurePartitions() {
+	if err := w.appDB.EnsureQueryLogPartitions(); err != nil {
+		w.logger.Error("worker: partition maintenance", "error", err)
+	}
+}
+
 // BulkRecord is exported for use by handlers.
 type BulkRecord = bulkRecord
+
+// retryFailed re-queues failed jobs that haven't exceeded max retries.
+func (w *Worker) retryFailed() {
+	// Count how many times each job has been attempted by checking if it has a
+	// result_summary containing prior errors. Simple approach: just re-queue
+	// failed jobs up to maxRetries times by resetting to pending.
+	result, err := w.db.Exec(
+		`UPDATE bulk_jobs SET status = 'pending'
+		 WHERE status = 'failed' AND error_count < ?
+		 AND completed_at < datetime('now', '-1 minute')`,
+		maxRetries,
+	)
+	if err != nil {
+		w.logger.Error("worker: retry query", "error", err)
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows > 0 {
+		w.logger.Info("worker: retrying failed jobs", "count", rows)
+	}
+}
+
+// cleanupQueryLog deletes query log entries older than 90 days.
+func (w *Worker) cleanupQueryLog() {
+	result, err := w.db.Exec(
+		`DELETE FROM query_log WHERE queried_at < datetime('now', '-90 days')`)
+	if err != nil {
+		w.logger.Error("worker: query log cleanup", "error", err)
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows > 0 {
+		w.logger.Info("worker: cleaned up old query logs", "deleted", rows)
+	}
+}
+

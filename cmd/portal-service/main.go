@@ -7,6 +7,8 @@ import (
 
 	"realNumberDNOClone/internal/api"
 	"realNumberDNOClone/internal/boot"
+
+	_ "realNumberDNOClone/docs"
 	"realNumberDNOClone/internal/cache"
 	"realNumberDNOClone/internal/models"
 	"realNumberDNOClone/internal/querylog"

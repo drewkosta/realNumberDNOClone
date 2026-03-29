@@ -16,7 +16,7 @@ import type {
   OwnershipValidation,
 } from './types';
 
-const api = axios.create({ baseURL: '/api' });
+const api = axios.create({ baseURL: '/api/v1' });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -26,11 +26,30 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let isRefreshing = false;
+
 api.interceptors.response.use(
   (res) => res,
-  (err: unknown) => {
-    if (isAxiosError(err) && err.response?.status === 401) {
+  async (err: unknown) => {
+    if (isAxiosError(err) && err.response?.status === 401 && err.config && !isRefreshing) {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (refreshToken) {
+        isRefreshing = true;
+        try {
+          const resp = await axios.post<LoginResponse>('/api/v1/auth/refresh', { refreshToken });
+          localStorage.setItem('token', resp.data.token);
+          localStorage.setItem('refreshToken', resp.data.refreshToken);
+          localStorage.setItem('user', JSON.stringify(resp.data.user));
+          isRefreshing = false;
+          // Retry the original request
+          err.config.headers.Authorization = `Bearer ${resp.data.token}`;
+          return api.request(err.config);
+        } catch {
+          isRefreshing = false;
+        }
+      }
       localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }

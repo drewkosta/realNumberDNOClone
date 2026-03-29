@@ -89,8 +89,9 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token string `json:"token"`
-	User  User   `json:"user"`
+	Token        string `json:"token"`
+	RefreshToken string `json:"refreshToken"`
+	User         User   `json:"user"`
 }
 
 type DNOQueryRequest struct {
@@ -254,6 +255,29 @@ type CreateOrgRequest struct {
 	OrgType   string  `json:"orgType"`
 	SPID      *string `json:"spid,omitempty"`
 	RespOrgID *string `json:"respOrgId,omitempty"`
+}
+
+// Swagger-friendly concrete types for generic PaginatedResponse
+type DNONumberPage struct {
+	Data       []DNONumber `json:"data"`
+	Total      int         `json:"total"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"pageSize"`
+	TotalPages int         `json:"totalPages"`
+}
+
+type AuditLogPage struct {
+	Data       []AuditLog `json:"data"`
+	Total      int        `json:"total"`
+	Page       int        `json:"page"`
+	PageSize   int        `json:"pageSize"`
+	TotalPages int        `json:"totalPages"`
+}
+
+type OwnershipValidation struct {
+	PhoneNumber string `json:"phoneNumber"`
+	Valid       bool   `json:"valid"`
+	Reason      string `json:"reason"`
 }
 
 // Validation helpers

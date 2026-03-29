@@ -536,3 +536,167 @@ Each service exposes `GET /health` with DB ping and service name:
 | `make build` | Build all 4 Go binaries + frontend production bundle |
 | `make test` | Run Go tests |
 | `make clean` | Remove build artifacts and database files |
+
+---
+
+## Security
+
+### Authentication
+
+- **JWT access tokens** expire in 15 minutes. Refresh tokens expire in 7 days.
+- **Refresh flow**: `POST /api/v1/auth/refresh` exchanges a refresh token for a new access + refresh pair. The frontend auto-refreshes on 401 before redirecting to login.
+- **bcrypt** with default cost (10) for password hashing. Minimum 8-character passwords enforced.
+- **API keys** are SHA-256 hashed before storage. Raw key shown once on generation.
+
+### CSRF
+
+CSRF is **not a concern** for this application because:
+- All state-changing requests require a `Bearer` token in the `Authorization` header or an `X-API-Key` header
+- Tokens are stored in `localStorage`, not cookies
+- Browsers do not automatically attach `Authorization` or `X-API-Key` headers on cross-origin requests
+- CORS is configured to only allow specific origins
+
+If cookies are ever introduced for auth, `SameSite=Strict` and a CSRF token would be required.
+
+### Rate Limiting
+
+- Login: 5 requests/minute per IP
+- API endpoints: configurable per-org RPS (0 = disabled for local, 2000 for production)
+- Rate limit headers exposed: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`
+
+### Request Limits
+
+- Query service: 1MB body limit
+- Portal service: 10MB body limit (bulk uploads)
+- DNO Analyzer: max 100,000 records per request with 30s timeout
+- CSV export: 60s timeout
+
+### Role-Based Access
+
+Backend enforces role checks on all endpoints. See [Roles & Access Model](#roles--access-model).
+
+---
+
+## Operations
+
+### Deployment
+
+**Recommended production topology:**
+
+```
+Internet
+  │
+  ▼
+[TLS Termination / Load Balancer]  (e.g., AWS ALB, nginx, Cloudflare)
+  │
+  ├── Gateway (N instances, stateless)
+  │     ├── Query Service (N instances, stateless, scale independently)
+  │     └── Portal Service (N instances, stateless)
+  │
+  ├── Worker Service (1-2 instances, polls for jobs)
+  │
+  └── PostgreSQL (primary + read replica for analytics)
+```
+
+All services are stateless (JWT auth, no sessions) and can be horizontally scaled behind a load balancer. Use the `/ready` endpoint for load balancer health checks (returns 503 if DB unreachable).
+
+**Build and deploy:**
+
+```bash
+make build                    # Builds all 4 binaries + frontend
+STATIC_DIR=./client/dist \    # Gateway serves frontend in production
+  ./bin/gateway
+```
+
+**Required environment variables for production:**
+
+```bash
+DATABASE_URL=postgres://user:pass@host:5432/dbname?sslmode=require
+JWT_SECRET=<random-64-char-string>
+GATEWAY_PORT=8080
+QUERY_PORT=8081
+PORTAL_PORT=8082
+QUERY_SERVICE_URL=http://query-service:8081
+PORTAL_SERVICE_URL=http://portal-service:8082
+```
+
+### Database Migrations
+
+Migrations run automatically on service startup. PostgreSQL uses `pg_advisory_lock` to prevent race conditions when multiple instances start simultaneously. For manual control, start a single instance first, then scale up.
+
+### Backup & Restore
+
+**PostgreSQL:**
+
+```bash
+# Backup
+pg_dump -Fc $DATABASE_URL > backup_$(date +%Y%m%d).dump
+
+# Restore
+pg_restore -d $DATABASE_URL backup_20260328.dump
+
+# Automated daily backup (cron)
+0 2 * * * pg_dump -Fc $DATABASE_URL > /backups/daily_$(date +\%Y\%m\%d).dump
+```
+
+**SQLite (local dev):**
+
+```bash
+cp realnumber_local.db realnumber_local.db.backup
+```
+
+### Secrets Management
+
+Environment variables are fine for development. In production, use a secrets manager:
+
+- **AWS**: Secrets Manager or SSM Parameter Store
+- **GCP**: Secret Manager
+- **Kubernetes**: External Secrets Operator syncing from Vault/AWS/GCP
+- **HashiCorp Vault**: Dynamic database credentials, JWT signing keys
+
+At minimum, these must not be in source control or container images:
+- `JWT_SECRET`
+- `DATABASE_URL` (contains password)
+- `ADMIN_PASSWORD`
+
+### Monitoring & Alerting
+
+Each service exposes Prometheus metrics at `/metrics`. Recommended alerts:
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| Service down | `/ready` returns non-200 for >30s | Critical |
+| High error rate | `http_requests_total{status=~"5.."}` > 1% of total | High |
+| High latency | `http_request_duration_seconds` p99 > 2s | High |
+| DNO cache miss rate | `cache_misses_total{cache="dno"}` > 50% | Medium |
+| Query log buffer backing up | Worker not flushing | Medium |
+| Bulk job failures | `bulk_jobs.status = 'failed'` accumulating | Medium |
+| Disk space (SQLite) | Database file > 1GB | Low |
+
+### Incident Runbook
+
+**Service won't start:**
+1. Check logs: `docker logs <container>` or service stdout
+2. Common causes: `DATABASE_URL` not set, DB unreachable, port already in use
+3. Verify DB connectivity: `psql $DATABASE_URL -c "SELECT 1"`
+
+**High latency on queries:**
+1. Check `/metrics` -- is `dno_query_duration_seconds` elevated?
+2. Check cache hit rate -- is `cache_hits_total` much lower than `cache_misses_total`?
+3. Check DB: `SELECT count(*) FROM dno_numbers` -- is the table unexpectedly large?
+4. Check if the composite index exists: `\d dno_numbers` in psql
+
+**Bulk jobs stuck in "processing":**
+1. Check worker logs for errors
+2. Worker retries failed jobs up to 3 times automatically
+3. Manual fix: `UPDATE bulk_jobs SET status = 'pending' WHERE status = 'processing' AND created_at < NOW() - INTERVAL '10 minutes'`
+
+**Query log table too large:**
+1. Worker cleans up entries >90 days automatically (hourly)
+2. Manual cleanup: `DELETE FROM query_log WHERE queried_at < NOW() - INTERVAL '90 days'`
+3. For PostgreSQL, consider partitioning by month if >100M rows
+
+**Rollback a deployment:**
+1. Deploy the previous container image / binary
+2. Migrations are additive (`CREATE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) -- no rollback DDL needed
+3. If a migration added a column that the old code doesn't know about, it's harmless (extra column is ignored)
