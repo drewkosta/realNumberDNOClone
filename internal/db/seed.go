@@ -311,7 +311,7 @@ func seedQueryLogs(db *sql.DB) error {
 	}
 	defer stmt.Close()
 
-	queryOrgIDs := []int64{2, 3, 4, 7, 8}
+	queryOrgIDs := []int64{1, 2, 3, 4, 7, 8}
 	areaCodes := []string{"201", "212", "305", "312", "415", "617", "713", "800", "855", "888"}
 
 	count := 0
