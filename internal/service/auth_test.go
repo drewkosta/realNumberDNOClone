@@ -100,6 +100,81 @@ func TestAuthService_ValidateToken(t *testing.T) {
 	}
 }
 
+func TestAuthService_RefreshToken(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	svc := NewAuthService(database, "test-secret")
+	svc.CreateUser(context.Background(), models.CreateUserRequest{
+		Email: "refresh@test.com", Password: "password123",
+		FirstName: "R", LastName: "T", Role: "operator",
+	})
+
+	loginResp, _ := svc.Login(context.Background(), "refresh@test.com", "password123")
+	if loginResp.RefreshToken == "" {
+		t.Fatal("expected refresh token on login")
+	}
+
+	// Refresh should return new tokens
+	refreshResp, err := svc.RefreshAccessToken(context.Background(), loginResp.RefreshToken)
+	if err != nil {
+		t.Fatalf("RefreshAccessToken: %v", err)
+	}
+	if refreshResp.Token == "" || refreshResp.RefreshToken == "" {
+		t.Error("expected new tokens from refresh")
+	}
+	if refreshResp.User.Email != "refresh@test.com" {
+		t.Errorf("user email = %q", refreshResp.User.Email)
+	}
+
+	// Using access token as refresh token should fail
+	_, err = svc.RefreshAccessToken(context.Background(), loginResp.Token)
+	if err == nil {
+		t.Error("expected error when using access token as refresh")
+	}
+
+	// Invalid token should fail
+	_, err = svc.RefreshAccessToken(context.Background(), "garbage")
+	if err == nil {
+		t.Error("expected error for invalid refresh token")
+	}
+}
+
+func TestAuthService_ResetPassword(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	svc := NewAuthService(database, "test-secret")
+	user, _ := svc.CreateUser(context.Background(), models.CreateUserRequest{
+		Email: "reset@test.com", Password: "oldpassword1",
+		FirstName: "R", LastName: "P", Role: "viewer",
+	})
+
+	// Reset password
+	err := svc.ResetPassword(context.Background(), user.ID, "newpassword1")
+	if err != nil {
+		t.Fatalf("ResetPassword: %v", err)
+	}
+
+	// Old password should fail
+	_, err = svc.Login(context.Background(), "reset@test.com", "oldpassword1")
+	if err == nil {
+		t.Error("old password should fail after reset")
+	}
+
+	// New password should work
+	_, err = svc.Login(context.Background(), "reset@test.com", "newpassword1")
+	if err != nil {
+		t.Errorf("new password should work: %v", err)
+	}
+
+	// Short password should fail
+	err = svc.ResetPassword(context.Background(), user.ID, "short")
+	if err == nil {
+		t.Error("expected error for short password")
+	}
+}
+
 func TestAuthService_Validation(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
