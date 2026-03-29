@@ -19,8 +19,13 @@ func SeedLocalData(d *DB) error {
 		return fmt.Errorf("checking existing data: %w", err)
 	}
 	if count > 0 {
-		log.Println("[seed] Database already has data, skipping seed")
-		return nil
+		log.Println("[seed] Existing data found, clearing database...")
+		for _, table := range []string{"query_log", "audit_log", "bulk_jobs", "webhook_subscriptions", "dno_numbers", "number_registry", "users", "organizations"} {
+			if _, err := db.Exec("DELETE FROM " + table); err != nil {
+				return fmt.Errorf("clearing table %s: %w", table, err)
+			}
+		}
+		log.Println("[seed] Database cleared")
 	}
 
 	log.Println("[seed] Seeding local database with mock data...")
