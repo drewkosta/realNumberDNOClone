@@ -184,10 +184,12 @@ func (h *Handlers) ListNumbers(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(q.Get("page"))
 	pageSize, _ := strconv.Atoi(q.Get("pageSize"))
 
+	// The DNO list is a shared database -- all users can browse it.
+	// Only add/remove operations are org-scoped.
+	// Pass orgId filter only if explicitly requested via query param.
 	var orgID *int64
-	role, _ := r.Context().Value(RoleKey).(string)
-	if role != "admin" {
-		if id, ok := r.Context().Value(OrgIDKey).(int64); ok {
+	if orgIDStr := q.Get("orgId"); orgIDStr != "" {
+		if id, err := strconv.ParseInt(orgIDStr, 10, 64); err == nil {
 			orgID = &id
 		}
 	}
