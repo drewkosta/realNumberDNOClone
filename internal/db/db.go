@@ -75,11 +75,24 @@ func initPostgres(dsn string) (*DB, error) {
 	}
 
 	d := &DB{Writer: conn, Reader: conn, driver: config.DBDriverPostgres}
-	if err := runMigrationsPostgres(conn); err != nil {
+	if err := withAdvisoryLock(conn, func() error { return runMigrationsPostgres(conn) }); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("running postgres migrations: %w", err)
 	}
 	return d, nil
+}
+
+// withAdvisoryLock acquires a PostgreSQL advisory lock to prevent multiple
+// instances from running migrations simultaneously. Lock ID is arbitrary but
+// fixed for this application.
+func withAdvisoryLock(db *sql.DB, fn func() error) error {
+	const lockID = 42_000_001 // arbitrary unique ID for migration lock
+	_, err := db.Exec("SELECT pg_advisory_lock($1)", lockID)
+	if err != nil {
+		return fmt.Errorf("acquiring migration lock: %w", err)
+	}
+	defer db.Exec("SELECT pg_advisory_unlock($1)", lockID)
+	return fn()
 }
 
 func (d *DB) Close() {
