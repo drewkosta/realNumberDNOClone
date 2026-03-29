@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
@@ -78,6 +79,10 @@ func initPostgres(dsn string) (*DB, error) {
 	if err := withAdvisoryLock(conn, func() error { return runMigrationsPostgres(conn) }); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("running postgres migrations: %w", err)
+	}
+	if err := d.EnsureQueryLogPartitions(); err != nil {
+		d.Close()
+		return nil, fmt.Errorf("creating query_log partitions: %w", err)
 	}
 	return d, nil
 }
@@ -289,14 +294,16 @@ func runMigrationsPostgres(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_dno_lookup ON dno_numbers(phone_number, channel, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_dno_dataset ON dno_numbers(dataset)`,
 		`CREATE INDEX IF NOT EXISTS idx_dno_org ON dno_numbers(added_by_org_id)`,
+		// Partitioned query_log for PostgreSQL -- partition by month
 		`CREATE TABLE IF NOT EXISTS query_log (
-			id SERIAL PRIMARY KEY,
+			id SERIAL,
 			org_id INTEGER REFERENCES organizations(id),
 			phone_number TEXT NOT NULL,
 			result TEXT NOT NULL CHECK(result IN ('hit', 'miss')),
 			channel TEXT NOT NULL CHECK(channel IN ('voice', 'text')),
-			queried_at TIMESTAMPTZ DEFAULT NOW()
-		)`,
+			queried_at TIMESTAMPTZ DEFAULT NOW(),
+			PRIMARY KEY (id, queried_at)
+		) PARTITION BY RANGE (queried_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_query_log_org ON query_log(org_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_query_log_time ON query_log(queried_at)`,
 		`CREATE TABLE IF NOT EXISTS audit_log (
@@ -403,4 +410,35 @@ func seedAdminUser(sqldb *sql.DB) error {
 		 SELECT 'admin@realnumber.local', '`+string(hash)+`', 'System', 'Admin', 'admin', `+fmt.Sprintf("%d", orgID)+`
 		 WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@realnumber.local')`)
 	return err
+}
+
+// EnsureQueryLogPartitions creates monthly partitions for the query_log table
+// for the current month and next 2 months. Safe to call repeatedly (idempotent).
+// Only applies to PostgreSQL; no-op for SQLite.
+func (d *DB) EnsureQueryLogPartitions() error {
+	if d.IsSQLite() {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		t := now.AddDate(0, i, 0)
+		partName := fmt.Sprintf("query_log_%d_%02d", t.Year(), t.Month())
+		start := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+		end := start.AddDate(0, 1, 0)
+
+		sql := fmt.Sprintf(
+			`CREATE TABLE IF NOT EXISTS %s PARTITION OF query_log FOR VALUES FROM ('%s') TO ('%s')`,
+			partName,
+			start.Format("2006-01-02"),
+			end.Format("2006-01-02"),
+		)
+		if _, err := d.Writer.Exec(sql); err != nil {
+			// Partition might already exist -- that's fine
+			if !strings.Contains(err.Error(), "already exists") {
+				return fmt.Errorf("creating partition %s: %w", partName, err)
+			}
+		}
+	}
+	return nil
 }

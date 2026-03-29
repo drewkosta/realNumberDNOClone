@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	appdb "realNumberDNOClone/internal/db"
 	"realNumberDNOClone/internal/models"
 )
 
@@ -17,15 +18,17 @@ type AddNumberFunc func(ctx context.Context, req models.AddDNORequest, orgID, us
 
 type Worker struct {
 	db       *sql.DB
+	appDB    *appdb.DB
 	addFn    AddNumberFunc
 	logger   *slog.Logger
 	done     chan struct{}
 	interval time.Duration
 }
 
-func NewWorker(db *sql.DB, addFn AddNumberFunc, logger *slog.Logger) *Worker {
+func NewWorker(database *appdb.DB, addFn AddNumberFunc, logger *slog.Logger) *Worker {
 	return &Worker{
-		db:       db,
+		db:       database.Writer,
+		appDB:    database,
 		addFn:    addFn,
 		logger:   logger,
 		done:     make(chan struct{}),
@@ -56,6 +59,7 @@ func (w *Worker) loop() {
 			w.retryFailed()
 		case <-cleanupTicker.C:
 			w.cleanupQueryLog()
+			w.ensurePartitions()
 		case <-w.done:
 			return
 		}
@@ -170,6 +174,13 @@ func EnqueueBulkAdd(ctx context.Context, db *sql.DB, orgID, userID int64, record
 		return 0, err
 	}
 	return id, nil
+}
+
+// ensurePartitions creates upcoming monthly query_log partitions (PostgreSQL only).
+func (w *Worker) ensurePartitions() {
+	if err := w.appDB.EnsureQueryLogPartitions(); err != nil {
+		w.logger.Error("worker: partition maintenance", "error", err)
+	}
 }
 
 // BulkRecord is exported for use by handlers.

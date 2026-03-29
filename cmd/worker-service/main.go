@@ -54,7 +54,7 @@ func main() {
 	featuresService := service.NewFeaturesService(app.DB, app.Logger)
 	dnoService.SetWebhookFirer(featuresService)
 
-	jobWorker := jobs.NewWorker(app.DB.Writer, dnoService.AddNumber, app.Logger)
+	jobWorker := jobs.NewWorker(app.DB, dnoService.AddNumber, app.Logger)
 	jobWorker.Start()
 
 	app.Logger.Info("Worker running, polling for jobs...")
