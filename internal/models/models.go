@@ -257,6 +257,29 @@ type CreateOrgRequest struct {
 	RespOrgID *string `json:"respOrgId,omitempty"`
 }
 
+// Swagger-friendly concrete types for generic PaginatedResponse
+type DNONumberPage struct {
+	Data       []DNONumber `json:"data"`
+	Total      int         `json:"total"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"pageSize"`
+	TotalPages int         `json:"totalPages"`
+}
+
+type AuditLogPage struct {
+	Data       []AuditLog `json:"data"`
+	Total      int        `json:"total"`
+	Page       int        `json:"page"`
+	PageSize   int        `json:"pageSize"`
+	TotalPages int        `json:"totalPages"`
+}
+
+type OwnershipValidation struct {
+	PhoneNumber string `json:"phoneNumber"`
+	Valid       bool   `json:"valid"`
+	Reason      string `json:"reason"`
+}
+
 // Validation helpers
 
 var validChannels = map[string]bool{"voice": true, "text": true, "both": true}

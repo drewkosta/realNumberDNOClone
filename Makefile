@@ -68,3 +68,6 @@ install:
 
 test:
 	go test ./...
+
+swagger:
+	swag init -g internal/api/doc.go -o docs --parseDependency --parseInternal

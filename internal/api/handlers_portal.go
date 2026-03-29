@@ -16,6 +16,17 @@ import (
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
+// Login godoc
+//
+//	@Summary		Login
+//	@Description	Authenticate with email and password, returns JWT access and refresh tokens
+//	@Tags			Auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		models.LoginRequest	true	"Login credentials"
+//	@Success		200		{object}	models.LoginResponse
+//	@Failure		401		{object}	map[string]string
+//	@Router			/auth/login [post]
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -32,6 +43,16 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// GetMe godoc
+//
+//	@Summary		Get current user
+//	@Description	Returns the authenticated user's profile information
+//	@Tags			Auth
+//	@Produce		json
+//	@Success		200	{object}	models.User
+//	@Failure		404	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/auth/me [get]
 func (h *Handlers) GetMe(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value(UserIDKey).(int64)
 	user, err := h.auth.GetUser(r.Context(), userID)
@@ -42,6 +63,17 @@ func (h *Handlers) GetMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+// RefreshToken godoc
+//
+//	@Summary		Refresh token
+//	@Description	Exchange a refresh token for a new access token
+//	@Tags			Auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		object{refreshToken=string}	true	"Refresh token"
+//	@Success		200		{object}	models.LoginResponse
+//	@Failure		401		{object}	map[string]string
+//	@Router			/auth/refresh [post]
 func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		RefreshToken string `json:"refreshToken"`
@@ -62,6 +94,18 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 // ── DNO Number Management ───────────────────────────────────────────────────
 
+// AddNumber godoc
+//
+//	@Summary		Add a DNO number
+//	@Description	Register a phone number on the Do-Not-Originate list
+//	@Tags			DNO Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		models.AddDNORequest	true	"Number to add"
+//	@Success		201		{object}	models.DNONumber
+//	@Failure		400		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/dno/numbers [post]
 func (h *Handlers) AddNumber(w http.ResponseWriter, r *http.Request) {
 	var req models.AddDNORequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -85,6 +129,18 @@ func (h *Handlers) AddNumber(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, number)
 }
 
+// RemoveNumber godoc
+//
+//	@Summary		Remove a DNO number
+//	@Description	Remove a phone number from the Do-Not-Originate list
+//	@Tags			DNO Management
+//	@Produce		json
+//	@Param			phoneNumber	query		string	true	"Phone number to remove"
+//	@Param			channel		query		string	false	"Channel (defaults to voice)"
+//	@Success		200			{object}	map[string]string
+//	@Failure		400			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/dno/numbers [delete]
 func (h *Handlers) RemoveNumber(w http.ResponseWriter, r *http.Request) {
 	phone := r.URL.Query().Get("phoneNumber")
 	channel := r.URL.Query().Get("channel")
@@ -107,6 +163,22 @@ func (h *Handlers) RemoveNumber(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "number removed from DNO list"})
 }
 
+// ListNumbers godoc
+//
+//	@Summary		List DNO numbers
+//	@Description	Retrieve a paginated list of DNO numbers with optional filters
+//	@Tags			DNO Management
+//	@Produce		json
+//	@Param			page		query		int		false	"Page number"
+//	@Param			pageSize	query		int		false	"Page size"
+//	@Param			dataset		query		string	false	"Filter by dataset"
+//	@Param			status		query		string	false	"Filter by status"
+//	@Param			channel		query		string	false	"Filter by channel"
+//	@Param			search		query		string	false	"Search term"
+//	@Success		200			{object}	models.DNONumberPage
+//	@Failure		400			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/dno/numbers [get]
 func (h *Handlers) ListNumbers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
@@ -131,6 +203,20 @@ func (h *Handlers) ListNumbers(w http.ResponseWriter, r *http.Request) {
 
 // ── Bulk Upload & Export ────────────────────────────────────────────────────
 
+// BulkUpload godoc
+//
+//	@Summary		Bulk upload DNO numbers
+//	@Description	Upload a CSV file of phone numbers for bulk addition to the DNO list
+//	@Tags			Bulk Operations
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Param			file		formData	file	true	"CSV file of phone numbers"
+//	@Param			channel		formData	string	false	"Channel (defaults to voice)"
+//	@Param			numberType	formData	string	false	"Number type (defaults to local)"
+//	@Success		202			{object}	object{jobId=int,status=string,totalRecords=int,message=string}
+//	@Failure		400			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/dno/bulk-upload [post]
 func (h *Handlers) BulkUpload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "file too large or invalid form data")
@@ -203,6 +289,18 @@ func (h *Handlers) BulkUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetBulkJobStatus godoc
+//
+//	@Summary		Get bulk job status
+//	@Description	Retrieve the status of a bulk upload job
+//	@Tags			Bulk Operations
+//	@Produce		json
+//	@Param			jobId	query		int	true	"Bulk job ID"
+//	@Success		200		{object}	models.BulkJob
+//	@Failure		400		{object}	map[string]string
+//	@Failure		404		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/dno/bulk-job [get]
 func (h *Handlers) GetBulkJobStatus(w http.ResponseWriter, r *http.Request) {
 	jobID, err := strconv.ParseInt(r.URL.Query().Get("jobId"), 10, 64)
 	if err != nil {
@@ -242,6 +340,15 @@ func (h *Handlers) GetBulkJobStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, job)
 }
 
+// ExportCSV godoc
+//
+//	@Summary		Export DNO numbers as CSV
+//	@Description	Download all DNO numbers as a CSV file
+//	@Tags			Bulk Operations
+//	@Produce		text/csv
+//	@Success		200	{file}	string
+//	@Security		BearerAuth
+//	@Router			/dno/export [get]
 func (h *Handlers) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=dno_export.csv")
@@ -273,6 +380,16 @@ func (h *Handlers) ExportCSV(w http.ResponseWriter, r *http.Request) {
 
 // ── Analytics & Audit ───────────────────────────────────────────────────────
 
+// GetAnalytics godoc
+//
+//	@Summary		Get analytics
+//	@Description	Retrieve DNO analytics summary
+//	@Tags			Analytics
+//	@Produce		json
+//	@Success		200	{object}	models.AnalyticsSummary
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/analytics [get]
 func (h *Handlers) GetAnalytics(w http.ResponseWriter, r *http.Request) {
 	var orgID *int64
 	role, _ := r.Context().Value(RoleKey).(string)
@@ -290,6 +407,18 @@ func (h *Handlers) GetAnalytics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, analytics)
 }
 
+// GetAuditLog godoc
+//
+//	@Summary		Get audit log
+//	@Description	Retrieve a paginated audit log of DNO operations
+//	@Tags			Analytics
+//	@Produce		json
+//	@Param			page		query		int	false	"Page number"
+//	@Param			pageSize	query		int	false	"Page size"
+//	@Success		200			{object}	models.AuditLogPage
+//	@Failure		500			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/audit-log [get]
 func (h *Handlers) GetAuditLog(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))

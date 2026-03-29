@@ -70,6 +70,9 @@ func main() {
 	r.Get("/api/v1/dno/query", queryProxy.ServeHTTP)
 	r.Post("/api/v1/dno/query/bulk", queryProxy.ServeHTTP)
 
+	// Swagger UI (proxied to portal-service)
+	r.Get("/swagger/*", portalProxy.ServeHTTP)
+
 	// Route all other API calls to portal-service
 	r.HandleFunc("/api/v1/*", portalProxy.ServeHTTP)
 

@@ -9,6 +9,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	"realNumberDNOClone/internal/cache"
 	"realNumberDNOClone/internal/config"
@@ -46,6 +47,7 @@ func NewPortalRouter(
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/health", healthHandler(database, cfg, "portal-service"))
 	r.Get("/ready", readyHandler(database, "portal-service"))
+	r.Get("/swagger/*", httpSwagger.WrapHandler)
 
 	// Login + refresh (rate limited)
 	r.Group(func(r chi.Router) {
