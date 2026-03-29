@@ -493,15 +493,16 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		ByDataset: make(map[string]int), ByChannel: make(map[string]int), ByNumberType: make(map[string]int),
 	}
 
+	// DNO number counts are always system-wide (the DNO list is a shared resource).
+	// Only query logs and audit logs are org-scoped for non-admins.
 	dnoWhere := "WHERE status = 'active'"
+	var dnoArgs []interface{}
+
 	queryWhere := "WHERE queried_at >= $1"
 	auditWhere := "WHERE created_at >= $1"
-	var dnoArgs []interface{}
 	var queryExtraArgs []interface{}
 	var auditExtraArgs []interface{}
 	if orgID != nil {
-		dnoWhere += " AND added_by_org_id = $1"
-		dnoArgs = append(dnoArgs, *orgID)
 		queryWhere += " AND org_id = $2"
 		queryExtraArgs = append(queryExtraArgs, *orgID)
 		auditWhere += " AND org_id = $2"
