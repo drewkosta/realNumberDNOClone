@@ -20,16 +20,50 @@ import (
 // PostgreSQL is the default dialect -- all service SQL uses $N placeholders.
 // For SQLite (local dev only), Q() rewrites $N -> ? automatically.
 type DB struct {
-	Writer *sql.DB
-	Reader *sql.DB
-	driver config.DBDriver
+	Writer  *sql.DB
+	Reader  *sql.DB
+	Replica *sql.DB // Read replica for heavy analytics queries; falls back to Reader if nil
+	driver  config.DBDriver
+}
+
+// AnalyticsReader returns the replica connection if configured, otherwise Reader.
+func (d *DB) AnalyticsReader() *sql.DB {
+	if d.Replica != nil {
+		return d.Replica
+	}
+	return d.Reader
 }
 
 func Initialize(cfg *config.Config) (*DB, error) {
+	var d *DB
+	var err error
 	if cfg.UseSQLite() {
-		return initSQLite(cfg.DBPath)
+		d, err = initSQLite(cfg.DBPath)
+	} else {
+		d, err = initPostgres(cfg.DBDSN)
 	}
-	return initPostgres(cfg.DBDSN)
+	if err != nil {
+		return nil, err
+	}
+
+	// Open read replica if configured
+	if cfg.DBReplicaDSN != "" {
+		replica, err := sql.Open("pgx", cfg.DBReplicaDSN)
+		if err != nil {
+			d.Close()
+			return nil, fmt.Errorf("opening read replica: %w", err)
+		}
+		replica.SetMaxOpenConns(10)
+		replica.SetMaxIdleConns(5)
+		if err := replica.Ping(); err != nil {
+			replica.Close()
+			d.Close()
+			return nil, fmt.Errorf("pinging read replica: %w", err)
+		}
+		d.Replica = replica
+	}
+
+	return d, nil
 }
 
 func initSQLite(dbPath string) (*DB, error) {
@@ -106,6 +140,9 @@ func (d *DB) Close() {
 	}
 	if d.Reader != nil && d.Reader != d.Writer {
 		d.Reader.Close()
+	}
+	if d.Replica != nil {
+		d.Replica.Close()
 	}
 }
 

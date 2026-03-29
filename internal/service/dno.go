@@ -508,7 +508,8 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		auditExtraArgs = append(auditExtraArgs, *orgID)
 	}
 
-	if err := s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM dno_numbers "+dnoWhere), dnoArgs...).Scan(&summary.TotalDNONumbers); err != nil {
+	ar := s.db.AnalyticsReader()
+	if err := ar.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM dno_numbers "+dnoWhere), dnoArgs...).Scan(&summary.TotalDNONumbers); err != nil {
 		return nil, fmt.Errorf("counting active numbers: %w", err)
 	}
 	summary.ActiveNumbers = summary.TotalDNONumbers
@@ -522,7 +523,7 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 		{"SELECT channel, COUNT(*) FROM dno_numbers " + dnoWhere + " GROUP BY channel", dnoArgs, summary.ByChannel},
 		{"SELECT number_type, COUNT(*) FROM dno_numbers " + dnoWhere + " GROUP BY number_type", dnoArgs, summary.ByNumberType},
 	} {
-		rows, err := s.db.Reader.QueryContext(ctx, s.db.Q(q.query), q.args...)
+		rows, err := ar.QueryContext(ctx, s.db.Q(q.query), q.args...)
 		if err != nil {
 			return nil, fmt.Errorf("analytics group query: %w", err)
 		}
@@ -544,13 +545,13 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 	since := time.Now().Add(-24 * time.Hour).Format("2006-01-02 15:04:05")
 	queryArgs := append([]interface{}{since}, queryExtraArgs...)
 
-	if err := s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM query_log "+queryWhere), queryArgs...).Scan(&summary.TotalQueries24h); err != nil {
+	if err := ar.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM query_log "+queryWhere), queryArgs...).Scan(&summary.TotalQueries24h); err != nil {
 		return nil, fmt.Errorf("counting queries 24h: %w", err)
 	}
 
 	var hits int
 	hitWhere := queryWhere + " AND result = 'hit'"
-	if err := s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM query_log "+hitWhere), queryArgs...).Scan(&hits); err != nil {
+	if err := ar.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM query_log "+hitWhere), queryArgs...).Scan(&hits); err != nil {
 		return nil, fmt.Errorf("counting hits 24h: %w", err)
 	}
 	if summary.TotalQueries24h > 0 {
@@ -558,7 +559,7 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 	}
 
 	hourCol := s.db.QTimeTrunc("queried_at")
-	rows, err := s.db.Reader.QueryContext(ctx, s.db.Q(
+	rows, err := ar.QueryContext(ctx, s.db.Q(
 		`SELECT `+hourCol+` as hour, COUNT(*) FROM query_log `+queryWhere+` GROUP BY hour ORDER BY hour`), queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying by hour: %w", err)
@@ -578,10 +579,10 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 
 	week := time.Now().Add(-7 * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	addArgs := append([]interface{}{week}, auditExtraArgs...)
-	if err := s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'add'"), addArgs...).Scan(&summary.RecentAdditions); err != nil {
+	if err := ar.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'add'"), addArgs...).Scan(&summary.RecentAdditions); err != nil {
 		return nil, fmt.Errorf("counting recent additions: %w", err)
 	}
-	if err := s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'remove'"), addArgs...).Scan(&summary.RecentRemovals); err != nil {
+	if err := ar.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM audit_log "+auditWhere+" AND action = 'remove'"), addArgs...).Scan(&summary.RecentRemovals); err != nil {
 		return nil, fmt.Errorf("counting recent removals: %w", err)
 	}
 
@@ -592,6 +593,7 @@ func (s *DNOService) GetAnalytics(ctx context.Context, orgID *int64) (*models.An
 }
 
 func (s *DNOService) GetAuditLog(ctx context.Context, orgID *int64, page, pageSize int) (*models.PaginatedResponse[models.AuditLog], error) {
+	ar := s.db.AnalyticsReader()
 	if page < 1 {
 		page = 1
 	}
@@ -615,7 +617,7 @@ func (s *DNOService) GetAuditLog(ctx context.Context, orgID *int64, page, pageSi
 	var total int
 	countArgs := make([]interface{}, len(args))
 	copy(countArgs, args)
-	if err := s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM audit_log "+where), countArgs...).Scan(&total); err != nil {
+	if err := ar.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM audit_log "+where), countArgs...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("counting audit entries: %w", err)
 	}
 
@@ -623,7 +625,7 @@ func (s *DNOService) GetAuditLog(ctx context.Context, orgID *int64, page, pageSi
 	limitParam := nextParam()
 	offsetParam := nextParam()
 	args = append(args, pageSize, offset)
-	rows, err := s.db.Reader.QueryContext(ctx, s.db.Q(
+	rows, err := ar.QueryContext(ctx, s.db.Q(
 		"SELECT id, user_id, org_id, action, entity_type, entity_id, details, created_at FROM audit_log "+
 			where+" ORDER BY created_at DESC LIMIT "+limitParam+" OFFSET "+offsetParam), args...)
 	if err != nil {

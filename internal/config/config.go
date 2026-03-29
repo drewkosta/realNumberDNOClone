@@ -27,9 +27,10 @@ const (
 type Config struct {
 	Env        Environment
 	Port       string
-	DBDriver   DBDriver
-	DBPath     string // SQLite file path
-	DBDSN      string // PostgreSQL connection string
+	DBDriver     DBDriver
+	DBPath       string // SQLite file path
+	DBDSN        string // PostgreSQL primary connection string
+	DBReplicaDSN string // PostgreSQL read replica (optional, for analytics)
 	JWTSecret  string
 	LogLevel   string
 	CORSOrigin string
@@ -170,6 +171,9 @@ func Load(env string) (*Config, error) {
 	}
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		cfg.DBDSN = v
+	}
+	if v := os.Getenv("DATABASE_REPLICA_URL"); v != "" {
+		cfg.DBReplicaDSN = v
 	}
 	if v := os.Getenv("JWT_SECRET"); v != "" {
 		cfg.JWTSecret = v
