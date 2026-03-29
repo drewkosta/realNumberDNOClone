@@ -25,50 +25,30 @@ This system maintains a database of phone numbers that should never appear as th
 The system is split into four microservices sharing a common database, with an API gateway routing traffic to the appropriate service.
 
 ```
-┌─────────────────┐
-│  React Client   │
-│  Vite + TS +    │
-│  Tailwind       │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│    Gateway      │ :8080
-│  (reverse proxy)│
-└───┬─────────┬───┘
-    │         │
-    │ /api/v1/dno/query  everything else
-    │ /api/v1/dno/query/ ─────────┐
-    │   bulk                      │
-    ▼                             ▼
-┌──────────────┐         ┌───────────────┐
-│ Query Service│ :8081   │ Portal Service│ :8082
-│              │         │               │
-│ DNO lookups  │         │ Auth & login  │
-│ LRU cache    │         │ Number CRUD   │
-│ Async query  │         │ Analytics     │
-│   log writer │         │ Compliance    │
-│ Rate limiting│         │ Webhooks      │
-│              │         │ DNO Analyzer  │
-│ API key +    │         │ ROI calculator│
-│   JWT auth   │         │ Admin tools   │
-└──────┬───────┘         └───────┬───────┘
-       │                         │
-       └────────────┬────────────┘
-                    │
-            ┌───────▼───────┐
-            │ Worker Service│ (no HTTP)
-            │               │
-            │ Bulk job      │
-            │   processing  │
-            │ TSS sync      │
-            │ NPAC events   │
-            └───────┬───────┘
-                    │
-            ┌───────▼───────┐
-            │  PostgreSQL   │ (default)
-            │  SQLite       │ (local dev)
-            └───────────────┘
+                 React Client :5173
+                       │
+                       ▼
+                ┌──────────────┐
+                │   Gateway    │ :8080
+                └──┬────────┬──┘
+                   │        │
+              queries    everything else
+                   │        │
+          ┌────────▼──┐  ┌──▼──────────┐
+          │  Query    │  │   Portal    │
+          │  Service  │  │   Service   │
+          │  :8081    │  │   :8082     │
+          └─────┬─────┘  └──────┬──────┘
+                │               │
+                └───────┬───────┘
+                        │
+                ┌───────▼───────┐
+                │    Worker     │  (no HTTP)
+                └───────┬───────┘
+                        │
+                ┌───────▼───────┐
+                │  PostgreSQL   │
+                └───────────────┘
 ```
 
 **Backend:** Go, chi router, JWT + API key auth, bcrypt, SQLite/PostgreSQL
