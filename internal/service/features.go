@@ -331,17 +331,13 @@ func (s *FeaturesService) GenerateComplianceReport(ctx context.Context, orgID *i
 		s.db.Reader.QueryRowContext(ctx, s.db.Q(`SELECT name FROM organizations WHERE id = $1`), *orgID).Scan(&report.OrgName)
 	}
 
-	// Total numbers
+	// DNO number counts are system-wide (the DNO list is a shared resource).
+	// Compliance posture reflects the entire database, not just one org's contributions.
 	dnoWhere := "WHERE status = 'active'"
-	var dnoArgs []interface{}
-	if orgID != nil {
-		dnoWhere += " AND added_by_org_id = $1"
-		dnoArgs = append(dnoArgs, *orgID)
-	}
-	s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM dno_numbers "+dnoWhere), dnoArgs...).Scan(&report.TotalDNONumbers)
+	s.db.Reader.QueryRowContext(ctx, s.db.Q("SELECT COUNT(*) FROM dno_numbers "+dnoWhere)).Scan(&report.TotalDNONumbers)
 
 	// Dataset coverage
-	rows, _ := s.db.Reader.QueryContext(ctx, s.db.Q("SELECT dataset, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY dataset"), dnoArgs...)
+	rows, _ := s.db.Reader.QueryContext(ctx, s.db.Q("SELECT dataset, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY dataset"))
 	if rows != nil {
 		for rows.Next() {
 			var ds string
@@ -353,7 +349,7 @@ func (s *FeaturesService) GenerateComplianceReport(ctx context.Context, orgID *i
 	}
 
 	// Channel coverage
-	rows, _ = s.db.Reader.QueryContext(ctx, s.db.Q("SELECT channel, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY channel"), dnoArgs...)
+	rows, _ = s.db.Reader.QueryContext(ctx, s.db.Q("SELECT channel, COUNT(*) FROM dno_numbers "+dnoWhere+" GROUP BY channel"))
 	if rows != nil {
 		for rows.Next() {
 			var ch string
